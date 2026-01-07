@@ -4,6 +4,9 @@ Module for IRC 22:2014 bridge design clauses.
 
 """
 
+from is800_2007 import IS800_2007
+
+
 class IRC22_2014:
 
     # 601.4 Material Strength and Partial Safety Factor (Clause 601.4)
@@ -191,9 +194,6 @@ class IRC22_2014:
 
         return reinforcement
 
-# table 2 
-# to be written
-
     # 603.2 Effective Width of Concrete Slab
     # 603.2.1 Simply Supported Girder (Pinned at Both Ends)
 
@@ -293,7 +293,25 @@ class IRC22_2014:
 
         else:
             raise ValueError("beam_type must be 'inner' or 'outer'")
-
+        
+    #table 2 -> Classification of steel cross-section
+    @staticmethod
+    def cl_603_check_steel_web_classification(
+        depth_web_mm,
+        tw_mm,
+        fy_MPa,
+        axial_force_N,
+        load_type="Compression",
+        section_class="Plastic"
+    ):
+        return IS800_2007.Table2_web_OfI_H_box_section(
+            depth=depth_web_mm,
+            web_thickness=tw_mm,
+            f_y=fy_MPa,
+            axial_load=axial_force_N,
+            load_type=load_type,
+            section_class=section_class
+        )
 
     @staticmethod
     def cl_603_3_1_positive_moment_capacity(
