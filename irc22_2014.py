@@ -1,11 +1,11 @@
 """
 Module for IRC 22:2014 bridge design clauses.
-@author: Sweta Pal
 
+@author: Sweta Pal
 """
 
 from is800_2007 import IS800_2007
-
+import math
 
 class IRC22_2014:
 
@@ -68,7 +68,7 @@ class IRC22_2014:
             "E_GPa": 200,                   # Young's Modulus (GPa) - convenience
             "G_MPa": 0.77e5,                # Shear Modulus (MPa)
             "nu": 0.30,                     # Poisson's Ratio
-            "thermal_expansion_per_C": 0.0000117  # per °C per unit length
+            "coefficient_of_thermal_expansion": 0.0000117  # per °C per unit length
         }
 
         return properties
@@ -77,25 +77,16 @@ class IRC22_2014:
     # 602 Material | Annex III (Concrete Properties)
 
     @staticmethod
-    def cl_602_annexIII_concrete_properties(aggregate_type="quartzite"):
+    def cl_602_annexIII_concrete_properties(
+        grade=None,
+        aggregate_type="quartzite",
+        is_structural=True
+    ):
         """
-        IRC:22-2014
-        Clause 602 | Annex-III | III.2 Concrete
-
-        Returns properties of concrete grades as per Table III-1:
-            - fck : Cube compressive strength (MPa)
-            - fcy : Cylinder compressive strength (MPa)
-            - fctm: Mean tensile strength (MPa)
-            - Ec  : Secant Modulus of Elasticity (GPa)
-
-        Aggregate Modification (as per IRC note):
-            quartzite/granite -> 1.0  (default)
-            limestone          -> 0.9
-            sandstone          -> 0.7
-            basalt             -> 1.2
+        IRC:22-2014 Clause 602 | Annex-III | III.2 Concrete
+        If structural concrete is used, minimum grade shall be M25.
         """
 
-        # Aggregate factors
         agg_factor_map = {
             "quartzite": 1.0,
             "granite": 1.0,
@@ -103,10 +94,8 @@ class IRC22_2014:
             "sandstone": 0.7,
             "basalt": 1.2
         }
-
         factor = agg_factor_map.get(aggregate_type.lower(), 1.0)
 
-        # Table III-1 Data
         concrete = {
             "M15":  {"fck": 15, "fcy": 12, "fctm": 1.6, "Ec": 27},
             "M20":  {"fck": 20, "fcy": 16, "fctm": 1.9, "Ec": 29},
@@ -127,10 +116,31 @@ class IRC22_2014:
         }
 
         # Apply Aggregate Modulus Factor
-        for grade, props in concrete.items():
+        for g, props in concrete.items():
             props["Ec"] = round(props["Ec"] * factor, 2)
 
-        return concrete
+        #  If grade not asked, return full table
+        if grade is None:
+            return concrete
+
+        grade = grade.upper()
+
+        # Enforce minimum grade for structural concrete
+        if is_structural:
+            allowed = ["M25", "M30", "M35", "M40", "M45", "M50", "M55", "M60", "M65", "M70", "M75", "M80", "M85", "M90"]
+            if grade not in allowed:
+                grade = "M25"
+
+        if grade not in concrete:
+            raise ValueError(f"Invalid concrete grade: {grade}")
+
+        return {
+            "grade": grade,
+            "aggregate_type": aggregate_type.lower(),
+            "is_structural": is_structural,
+            **concrete[grade]
+        }
+
 
     # 602 Material | Annex III | III.3 Reinforcement Steel
 
@@ -145,155 +155,121 @@ class IRC22_2014:
 
         Table covered: Mechanical Properties of High Strength Deformed Bars
 
-        Returns:
-            dict of reinforcement grades with:
-                fy  : characteristic yield strength (MPa)
-                fu  : ultimate tensile strength (MPa)
-                elongation_min_percent : minimum elongation %
-                fu_by_fy_requirement  : minimum required tensile/yield ratio
+        This function stores:
+            fy  : characteristic yield strength (MPa)
+            fu  : minimum ultimate tensile strength (MPa)
+            elongation_min_percent : minimum elongation %
+
+        And CALCULATES:
+            fu_required = max((1 + p/100)*fy, fu)
+            fu_by_fy_requirement = fu_required / fy
         """
 
-        reinforcement = {
-            "Fe415": {
-                "fy": 415,
-                "fu": 485,
-                "elongation_min_percent": 14.5,
-                "fu_by_fy_requirement": 1.08
-            },
-            "Fe500": {
-                "fy": 500,
-                "fu": 565,
-                "elongation_min_percent": 12.0,
-                "fu_by_fy_requirement": 1.08
-            },
-            "Fe500D": {
-                "fy": 500,
-                "fu": 565,
-                "elongation_min_percent": 16.0,
-                "fu_by_fy_requirement": 1.08
-            },
-            "Fe550": {
-                "fy": 550,
-                "fu": 600,
-                "elongation_min_percent": 10.0,
-                "fu_by_fy_requirement": 1.08
-            },
-            "Fe550D": {
-                "fy": 550,
-                "fu": 600,
-                "elongation_min_percent": 14.0,
-                "fu_by_fy_requirement": 1.08
-            },
-            "Fe600": {
-                "fy": 600,
-                "fu": 660,
-                "elongation_min_percent": 10.0,
-                "fu_by_fy_requirement": 1.08
-            },
+        def _fu_ratio(fy, fu_min, percent_more_than_yield):
+            """
+            Calculate effective fu/fy requirement based on:
+                fu >= (1+p)*fy  AND  fu >= fu_min
+            """
+            p = percent_more_than_yield / 100.0
+            fu_required = max((1.0 + p) * fy, fu_min)
+            ratio = fu_required / fy
+            return round(fu_required, 2), round(ratio, 4)
+
+        # Values exactly as per Table 3 (IS:1786-2008)
+        # percent_more_than_yield corresponds to the "10%, 12%, 8%, ..." row in the table
+        reinforcement_raw = {
+            "Fe415":  {"fy": 415.0, "fu": 485.0, "elongation_min_percent": 14.5, "percent_more_than_yield": 10.0},
+            "Fe415D": {"fy": 415.0, "fu": 500.0, "elongation_min_percent": 18.0, "percent_more_than_yield": 12.0},
+            "Fe500":  {"fy": 500.0, "fu": 545.0, "elongation_min_percent": 12.0, "percent_more_than_yield": 8.0},
+            "Fe500D": {"fy": 500.0, "fu": 565.0, "elongation_min_percent": 16.0, "percent_more_than_yield": 10.0},
+            "Fe550":  {"fy": 550.0, "fu": 585.0, "elongation_min_percent": 10.0, "percent_more_than_yield": 6.0},
+            "Fe550D": {"fy": 550.0, "fu": 600.0, "elongation_min_percent": 14.5, "percent_more_than_yield": 8.0},
+            "Fe600":  {"fy": 600.0, "fu": 660.0, "elongation_min_percent": 10.0, "percent_more_than_yield": 6.0},
         }
 
+        # Build final dictionary with calculated values
+        reinforcement = {}
+
+        for grade, props in reinforcement_raw.items():
+            fy = props["fy"]
+            fu_min = props["fu"]
+            percent_more = props["percent_more_than_yield"]
+
+            fu_required, ratio_required = _fu_ratio(fy, fu_min, percent_more)
+
+            reinforcement[grade] = {
+                "fy": fy,
+                "fu": fu_min,
+                "elongation_min_percent": props["elongation_min_percent"],
+
+                # from Table condition
+                "percent_more_than_yield": percent_more,
+
+                # calculated outputs (requested improvement)
+                "fu_required": fu_required,
+                "fu_by_fy_requirement": ratio_required
+            }
+
         return reinforcement
+
 
     # 603.2 Effective Width of Concrete Slab
     # 603.2.1 Simply Supported Girder (Pinned at Both Ends)
 
-
     # 603.2.1  Effective Width of Simply Supported Girder
 
     @staticmethod
-    def cl_603_2_1_effective_width_simply_supported(
-        Lo,                  # Effective span = distance between zero moments (≈ L)
-        beam_type="inner",   # "inner" or "outer"
-        B1=None,             # spacing left of beam
-        B2=None,             # spacing right of beam
-        B0=None              # overhang / spacing outside outer girder
-    ):
+    def cl_603_2_1_effective_width_simply_supported(Lo, beam_type="inner", B=None, B1=None, B2=None, B0=None):
         """
-        IRC:22-2014
-        Clause 603.2.1 – Effective Width of Simply Supported Composite Girder
+        IRC:22-2014 Clause 603.2.1
+        Effective Width of Simply Supported Girder
 
-        Parameters:
-            Lo  : Effective span (m or mm — maintain consistency)
-            beam_type : "inner" or "outer"
-            B1  : spacing to adjacent slab/girder on one side (for inner/outer)
-            B2  : spacing to other side (for inner)
-            B0  : spacing outside outer girder (for outer)
+        Inner beam:
+            beff = min(Lo/4, (B1+B2)/2)
+            if equal spacing (B1=B2=B): beff = min(Lo/4, B)
 
-        Returns:
-            dict {
-                "beff": effective width,
-                "clause": "IRC 22:2014 - 603.2.1",
-                "equation": "3.2 / 3.3 / 3.4"
-            }
+        Outer beam:
+            beff = min(Lo/8, B1/2) + min(B0, Lo/8)
         """
 
         beam_type = beam_type.lower()
 
-
-        # INNER GIRDER  (Eq. 3.2 / 3.3)
-
-        if beam_type == "inner":
-
-            if B1 is None or B2 is None:
-                raise ValueError("B1 and B2 must be provided for inner beams")
-
-            # Eq 3.2
-            beff = Lo / 4.0
-
-            # Clause limit
-            limit = (B1 + B2) / 2.0
-
-            beff = min(beff, limit)
-
-            return {
-                "beam_type": "inner",
-                "Lo": Lo,
-                "B1": B1,
-                "B2": B2,
-                "beff": beff,
-                "equation": "3.2 / 3.3",
-                "clause": "IRC 22:2014 - 603.2.1"
-            }
-
-
-        # OUTER EDGE GIRDER (Eq. 3.4)
-
-        elif beam_type == "outer":
-
-            if B1 is None or B0 is None:
-                raise ValueError("B1 and B0 must be provided for outer beams")
-
-            X = B0
-
-            # From clause: constraints
-            # Lo/8 ≤ B1/2
-            # B0 = X ≤ Lo/8
-            if Lo / 8.0 > (B1 / 2.0):
-                print("Warning: Condition Lo/8 ≤ B1/2 not satisfied as per IRC 22")
-            if X > Lo / 8.0:
-                print("Warning: X (=B0) exceeds Lo/8 limit")
-
-            # Eq 3.4
-            beff = Lo / 8.0 + X
-
-            # upper bound:
-            limit = (B1 / 2.0) + X
-            beff = min(beff, limit)
-
-            return {
-                "beam_type": "outer",
-                "Lo": Lo,
-                "B1": B1,
-                "B0": B0,
-                "X": X,
-                "beff": beff,
-                "equation": "3.4",
-                "clause": "IRC 22:2014 - 603.2.1"
-            }
-
-        else:
+        if beam_type not in ["inner", "outer"]:
             raise ValueError("beam_type must be 'inner' or 'outer'")
-        
+
+        if Lo <= 0:
+            raise ValueError("Lo must be positive")
+
+        # ---------------- INNER BEAM ----------------
+        if beam_type == "inner":
+            if B is not None:
+                # equal spacing case: B1=B2=B
+                beff = min(Lo / 4.0, B)
+                eq_used = "Eq 3.3 (equal spacing)"
+            else:
+                if B1 is None or B2 is None:
+                    raise ValueError("For inner beam provide either B (equal spacing) OR both B1 and B2.")
+                beff = min(Lo / 4.0, (B1 + B2) / 2.0)
+                eq_used = "Eq 3.2 (general)"
+
+        # ---------------- OUTER BEAM ----------------
+            """B0 = distance from edge beam to free edge of slab (X in IRC figure)"""
+        else:
+            if B1 is None or B0 is None:
+                raise ValueError("For outer beam provide B1 and B0 (where X=B0).")
+
+            beff = min(Lo / 8.0, B1 / 2.0) + min(B0, Lo / 8.0)
+            eq_used = "Eq 3.4 (outer beam)"
+
+        return {
+            "beam_type": beam_type,
+            "Lo_m": Lo,
+            "beff_m": round(beff, 4),
+            "equation_used": eq_used,
+            "clause": "IRC 22:2014 - 603.2.1"
+        }
+
+
     #table 2 -> Classification of steel cross-section
     @staticmethod
     def cl_603_check_steel_web_classification(
@@ -312,6 +288,52 @@ class IRC22_2014:
             load_type=load_type,
             section_class=section_class
         )
+    
+
+    @staticmethod
+    def cl_602_table2_i_outstanding_compression_flange(
+        width_mm,
+        thickness_mm,
+        fy_MPa,
+        section_type="Rolled"
+    ):
+        """
+        IRC:22-2014 Clause 602 (Ref: IS800:2007 Table 2 (i))
+        Outstanding element of compression flange.
+
+        Returns:
+            list: [section_class, ratio]
+        """
+        return IS800_2007.Table2_i(
+            width=width_mm,
+            thickness=thickness_mm,
+            f_y=fy_MPa,
+            section_type=section_type
+        )
+
+
+    @staticmethod
+    def cl_602_table2_iii_web_classification(
+        depth_mm,
+        thickness_mm,
+        fy_MPa,
+        classification_type="Neutral axis at mid-depth"
+    ):
+        """
+        IRC:22-2014 Clause 602 (Ref: IS800:2007 Table 2 (iii))
+        Web of an I/H/Box section classification.
+
+        Returns:
+            str: section_class
+        """
+        return IS800_2007.Table2_iii(
+            depth=depth_mm,
+            thickness=thickness_mm,
+            f_y=fy_MPa,
+            classification_type=classification_type
+        )
+
+
 
     @staticmethod
     def cl_603_3_1_positive_moment_capacity(
@@ -327,7 +349,8 @@ class IRC22_2014:
             dc,
             combination_type="basic",
             is_compact=True,
-            beff_compact_limit=None
+            beff_compact_limit=None,
+            fabrication="rolled"
         ):
             
             """
@@ -338,166 +361,138 @@ class IRC22_2014:
             """
 
             # Annex I.2  —  Non-Compact Section Restriction
+            
             # For non-compact sections, beff must be restricted
-            # to the compact section limiting value from Table-2
+            # to compact section limiting value from IS 800 Table 2.
 
-            beff_used = beff   # default: full effective width
+            beff_used = beff  # default: use full effective width
+            beff_compact_limit = None
+            beff_flange_limit = None
+            beff_web_limit = None
 
             if not is_compact:
-                if beff_compact_limit is None:
-                    raise ValueError(
-                        "Non-compact section detected but beff_compact_limit not provided "
-                        "(Table 2 compact limiting width must be supplied)."
-                    )
+
+                # 1) Flange compact limit (IS800 Table 2(i))
+
+                # We compute Compact limiting ratio and multiply by tf
+                eps = math.sqrt(250.0 / fy)
+
+                if fabrication.lower() == "rolled":
+                    flange_compact_ratio = 10.5 * eps   # Table 2(i) compact limit for rolled
+                    section_type = "Rolled"
+                else:
+                    flange_compact_ratio = 9.4 * eps    # Table 2(i) compact limit for welded
+                    section_type = "Welded"
+
+                flange_check = IS800_2007.Table2_i(
+                    width=bf,
+                    thickness=tf,
+                    f_y=fy,
+                    section_type=section_type
+                )
+
+                beff_flange_limit = flange_compact_ratio * tf
+
+                # 2) Web compact limit (IS800 Table 2(iii))
+
+                web_check = IS800_2007.Table2_iii(
+                    depth=ds,
+                    thickness=tw,
+                    f_y=fy,
+                    classification_type="Neutral axis at mid-depth"
+                )
+
+                # Compact limiting ratio for Table 2(iii) = 105*eps
+                web_compact_ratio = 105.0 * eps
+                beff_web_limit = web_compact_ratio * tw
+
+
+                # Final compact beff limit & restriction
+
+                beff_compact_limit = min(beff_flange_limit, beff_web_limit)
                 beff_used = min(beff, beff_compact_limit)
 
+                return{
+                    "beff_input": beff,
+                    "beff_used": round(beff_used, 3),
+                    "beff_compact_limit": None if beff_compact_limit is None else round(beff_compact_limit, 3),
+                    "beff_flange_limit": None if beff_flange_limit is None else round(beff_flange_limit, 3),
+                    "beff_web_limit": None if beff_web_limit is None else round(beff_web_limit, 3),
+                }
 
-            # MATERIAL PARTIAL SAFETY FACTORS
-
-            gamma_m = 1.10  # steel
-
-            if combination_type in ["basic", "seismic"]:
-                gamma_c = 1.50
-            elif combination_type == "accidental":
-                gamma_c = 1.20
-            else:
-                raise ValueError("Invalid load combination type")
-
-
-            # CONCRETE PARAMETERS
-
-            alpha_cc = 0.67
-
-            if fck <= 60:
-                eta = 1.0
-                lam = 0.8
-            else:
-                eta = 1.0 - (fck - 60) / 250.0
-                lam = 0.8 - (fck - 60) / 500.0
-
-
-            # PARAMETER 'a'
-
-            a = (alpha_cc * eta * fck / gamma_c) / (fy / gamma_m)
-
-
-            # CASE SELECTION CONDITIONS
-
-            left = beff_used * ds
-            middle = a * As
-            right = (bf * ds + 2 * a * Af)
-
-            if left >= middle:
-                case = 1     # NA in slab
-            elif left < middle < right:
-                case = 2     # NA in steel flange
-            else:
-                case = 3     # NA in web
-
-
-            # xu COMPUTATION (Depth of NA)
-
-            if case == 1:
-                xu = (a * As) / beff_used
-
-            elif case == 2:
-                xu = ds + ((a * As - bf * ds) / (2 * bf * a))
-
-            else:  # case 3
-                xu = ds + tf + (a * (As - 2 * Af) - bf * ds) / (2 * a * tw)
-
-
-            # ULTIMATE MOMENT CAPACITY Mp
-
-            fy_eff = fy / gamma_m
-
-            if case == 1:
-                Mp = As * fy_eff * (dc + 0.5 * ds - lam * xu / 2)
-
-            elif case == 2:
-                Mp = fy_eff * (
-                    As * (dc + 0.5 * ds * (1 - lam))
-                    - bf * (xu - ds) * tf
-                    + (1 - lam) * ds * tf
-                )
-
-            else:  # case 3
-                Mp = fy_eff * (
-                    As * (dc + 0.5 * ds * (1 - lam))
-                    - 2 * Af * (0.5 * tf * (1 - lam) * ds)
-                    - tw * (xu - ds - tf) * tf
-                )
-
-            return {
-                "gamma_m": gamma_m,
-                "gamma_c": gamma_c,
-                "alpha_cc": round(alpha_cc, 4),
-                "eta": round(eta, 4),
-                "lambda": round(lam, 4),
-                "a": round(a, 4),
-                "case": case,
-                "xu_m": round(xu, 6),
-                "Mp_kNm": round(Mp / 1e6, 3),  # assume Nmm → convert to kNm if input mm/N
-                "clause": "IRC 22:2014 - 603.3.1 + Annex I (I.1 & I.2)"
-            }
 
     @staticmethod
     def cl_603_3_3_1_buckling_resistance_moment(
-        Mp,             # plastic moment from 603.3.1 (I.1 / I.2)
-        fy,             # MPa
-        Zp,             # plastic modulus (mm3)
-        Z=None,         # elastic modulus (mm3) (needed for semi-compact)
-        section_type="plastic",   # "plastic" / "compact" / "semi-compact"
-        fabrication="rolled",      # "rolled" / "welded"
-        E=2.0e5,        # MPa
-        G=0.77e5,       # MPa
-        Iy=None,        # mm4
-        It=None,        # mm4
-        Iw=None,        # mm6
-        LLT=None        # mm (effective buckling length)
+        section_class,       # "Plastic" / "Compact" / "Semi-Compact"
+        Zp,                  # mm3
+        Ze,                  # mm3
+        fy,                  # MPa
+        gamma_m0=1.10,
+        support="KEY_DISP_SUPPORT1",
+
+        Iy=None,             # mm4
+        It=None,             # mm4
+        Iw=None,             # mm6
+        LLT=None,            # mm
+
+        section_type="rolled",  # "rolled" / "welded"
+
+        E=2.0e5,             # MPa
+        G=0.77e5             # MPa
     ):
         """
-        IRC:22-2014
-        Clause 603.3.3.1
+        IRC:22-2014 Clause 603.3.3.1
         Annexure I: I.5 Buckling Resistance Moment (Construction Stage)
 
-        Returns:
-            χLT and buckling reduced plastic moment
+        Uses IS 800:2007 Clause 8.2.1.2 for Mpl
         """
+
+        import math
+        from is800_2007 import IS800_2007
 
         if None in [Iy, It, Iw, LLT]:
             raise ValueError("Iy, It, Iw and LLT must be provided")
 
-        # βz
+        # 1: Mpl from IS800 Clause 8.2.1.2
+        Mpl = IS800_2007.cl_8_2_1_2_design_bending_strength(
+            section_class=section_class,
+            Zp=Zp,
+            Ze=Ze,
+            fy=fy,
+            gamma_m0=gamma_m0,
+            support=support
+        )  # expected Nmm
 
-        if section_type.lower() in ["plastic", "compact"]:
-            beta_z = 1.0
-        else:   # semi compact
-            if Z is None:
-                raise ValueError("Z required for semi-compact sections")
-            beta_z = Z / Zp
+        # 2: βb (clause variable)
 
-        # αLT
-
-        if fabrication.lower() == "rolled":
-            alpha_LT = 0.21
+        if section_class.lower() in ["plastic", "compact"]:
+            beta_b = 1.0
+        elif section_class.lower() in ["semi-compact", "semicompact", "semi_compact"]:
+            beta_b = Ze / Zp
         else:
+            raise ValueError("section_class must be 'Plastic', 'Compact', or 'Semi-Compact'")
+
+        # 3: alpha_LT depends on rolled/welded
+
+        if section_type.lower() == "rolled":
+            alpha_LT = 0.21
+        elif section_type.lower() == "welded":
             alpha_LT = 0.49
+        else:
+            raise ValueError("section_type must be 'rolled' or 'welded'")
 
 
-        # Critical buckling moment Mcr
-
-        import math
+        # 4: Critical buckling moment Mcr
 
         term1 = (math.pi**2 * E * Iy) / (LLT**2)
         term2 = (G * It) + ((math.pi**2 * E * Iw) / (LLT**2))
+        Mcr = math.sqrt(term1 * term2)  # Nmm
 
-        Mcr = math.sqrt(term1 * term2)   # Nmm
+        # 5: Slenderness ratio λLT
 
-        # Slenderness ratio λLT
-        lambda_LT = math.sqrt(beta_z * (Zp * fy) / Mcr)
+        lambda_LT = math.sqrt(beta_b * (Zp * fy) / Mcr)
 
-        # If λLT <= 0.4 → no LTB effect
+        # 6: χLT
 
         if lambda_LT <= 0.4:
             chi_LT = 1.0
@@ -506,19 +501,25 @@ class IRC22_2014:
             chi_LT = 1 / (phi_LT + math.sqrt(phi_LT**2 - lambda_LT**2))
             chi_LT = min(chi_LT, 1.0)
 
+        # STEP 7: Buckling reduced moment capacity
 
-        # Buckling reduced plastic moment
-        
-        Mpl_buck = chi_LT * Mp
+        Mpl_buck = chi_LT * Mpl
 
         return {
-            "beta_z": round(beta_z, 4),
-            "alpha_LT": alpha_LT,
+            "section_class": section_class,
+            "section_type": section_type,
+
+            "beta_b": round(beta_b, 4),
+            "alpha_LT": round(alpha_LT, 4),
+
             "lambda_LT": round(lambda_LT, 4),
             "chi_LT": round(chi_LT, 4),
+
             "Mcr_kNm": round(Mcr / 1e6, 3),
+            "Mpl_kNm": round(Mpl / 1e6, 3),
             "Mpl_buckling_kNm": round(Mpl_buck / 1e6, 3),
-            "clause": "IRC 22:2014 - 603.3.3.1 Annex I (I.5)"
+
+            "clause": "IRC 22:2014 - 603.3.3.1 Annex I (I.5) + IS 800:2007 8.2.1.2"
         }
 
 
@@ -528,93 +529,81 @@ class IRC22_2014:
     def cl_603_3_3_2_plastic_shear_resistance(
         section_type,
         fyw,
-        h=None,
-        d=None,
-        tw=None,
-        A=None,
-        b=None
+        fabrication="rolled",     
+        h=None,                   
+        d=None,                   # web depth for welded/plate girder I-major
+        tw=None,                  # web thickness
+        bf=None,                  # flange width for I-minor
+        tf=None                   # flange thickness for I-minor
     ):
         """
         IRC:22-2014
-        Clause 603.3.3.2  (1) Plastic Shear Resistance
-        Equation 3.5
+        Clause 603.3.3.2 (1) Plastic Shear Resistance
+        (Reference: IS 800:2007 Clause 8.4.1 for shear area)
 
         Vn = Vp = (Av * fyw) / √3
         Vd = Vn / γm0
         γm0 = 1.10
 
-        Parameters:
-            section_type : "I_major", "I_minor", "RHS", "CHS"
-            fyw : yield stress of web (MPa)
-            h   : total section depth (mm)           [for I hot rolled major]
-            d   : clear web depth (mm)               [for welded I or minor]
-            tw  : web thickness (mm)
-            A   : total cross section area (mm2)     [for RHS / CHS]
-            b   : flange width / tube breadth (mm)
+        section_type:
+            - "i_major" : major axis bending of I section
+            - "i_minor" : minor axis bending of I section
 
-        Returns:
-            dict with:
-                Av          : shear area (mm2)
-                Vn_kN       : nominal shear resistance (kN)
-                Vd_kN       : design shear resistance (kN)
-                gamma_m0    : partial safety factor
-                clause      : reference
+        fabrication:
+            - "rolled" : Av = h * tw
+            - "welded" : Av = d * tw   (plate girder)
+
+        For i_minor:
+            Av = 2 * bf * tf
         """
 
         import math
 
         gamma_m0 = 1.10
-
         section_type = section_type.lower()
-        # Compute Shear Area Av
+        fabrication = fabrication.lower()
+
+        # SHEAR AREA Av
 
         if section_type == "i_major":
-            # I / Channel – Major Axis
-            # Av = h * tw  (hot rolled)
-            # or d * tw    (welded). We assume user gives correct value
-            if h is None or tw is None:
-                raise ValueError("h and tw required for I_major section")
-            Av = h * tw
+            if fabrication == "rolled":
+                if h is None or tw is None:
+                    raise ValueError("For rolled i_major section: h and tw are required")
+                Av = h * tw
+
+            elif fabrication == "welded":
+                if d is None or tw is None:
+                    raise ValueError("For welded i_major section: d and tw are required")
+                Av = d * tw
+
+            else:
+                raise ValueError("fabrication must be 'rolled' or 'welded'")
 
         elif section_type == "i_minor":
-            # Minor axis bending
-            # Av = 2 * flange_width * flange_thickness
-            if b is None or tw is None:
-                raise ValueError("b and tw required for I_minor section")
-            Av = 2 * b * tw
-
-        elif section_type == "rhs":
-            # Rectangular Hollow Section
-            # Av = A * d / (b + d)
-            if A is None or b is None or d is None:
-                raise ValueError("A, b, d required for RHS")
-            Av = A * d / (b + d)
-
-        elif section_type == "chs":
-            # Circular Hollow Section
-            # Av = 2A / π
-            if A is None:
-                raise ValueError("A required for CHS")
-            Av = (2 * A) / math.pi
+            #  consistent symbols as per IRC22/IS800
+            if bf is None or tf is None:
+                raise ValueError("For i_minor section: bf and tf are required")
+            Av = 2.0 * bf * tf
 
         else:
-            raise ValueError("Invalid section type")
+            raise ValueError("section_type must be 'i_major' or 'i_minor'")
 
+        # NOMINAL + DESIGN SHEAR
 
-        # Nominal Shear Strength
-
-        Vn = (Av * fyw) / math.sqrt(3)
-
-        # Design Shear Strength
-        Vd = Vn / gamma_m0
+        Vn_N = (Av * fyw) / math.sqrt(3)      # N
+        Vd_N = Vn_N / gamma_m0                # N
 
         return {
-            "Av_mm2": Av,
-            "Vn_kN": round(Vn / 1000, 3),  # convert N to kN
-            "Vd_kN": round(Vd / 1000, 3),
+            "section_type": section_type,
+            "fabrication": fabrication,
+            "Av_mm2": round(Av, 3),
+            "fyw_MPa": fyw,
+            "Vn_kN": round(Vn_N / 1000.0, 3),
+            "Vd_kN": round(Vd_N / 1000.0, 3),
             "gamma_m0": gamma_m0,
-            "clause": "IRC 22:2014 - 603.3.3.2 (1) Plastic Shear Resistance"
+            "clause": "IRC 22:2014 - 603.3.3.2 (1) Plastic Shear Resistance (Eq 3.5) + IS800 8.4.1"
         }
+
 
 
     # 603.3.3.2 (2)(a)
@@ -623,66 +612,78 @@ class IRC22_2014:
     @staticmethod
     def cl_603_3_3_2_shear_buckling_post_critical(
         Av,          # shear area (mm2)
-        fyw,         # web yield strength MPa
+        fyw,         # web yield strength (MPa)
         d,           # web depth (mm)
         tw,          # web thickness (mm)
-        c=None,      # spacing of transverse stiffeners (mm)
-        E=2.0e5,     # MPa
+        c=None,      # spacing of transverse stiffeners (mm) [required if intermediate stiffeners exist]
+        E=2.0e5,     # Modulus of Elasticity (MPa)
         mu=0.3,      # Poisson ratio
         stiffeners_at_support_only=True
     ):
         """
         IRC:22-2014
-        Clause 603.3.3.2 (2)(a)
-        Simple Post-Critical Shear Buckling Method
+        Clause 603.3.3.2 (2)(a) – Shear Buckling Resistance
+        Simple Post-Critical Method
+
+        Ref:
+            IS 800:2007 Clause 8.4.2.2(a) – Simple Post-Critical Method (web shear buckling)
 
         Returns:
-            Nominal shear strength Vn (kN)
+            dict with:
+                kv            : shear buckling coefficient
+                tau_cr_e_MPa  : elastic critical shear stress (MPa)
+                lambda_w      : non-dimensional web slenderness
+                tau_b_MPa     : shear buckling stress (MPa)
+                Vn_kN         : nominal shear strength (kN)
         """
 
         import math
 
-        # Step-1: kv Based on IRC Rules
-
+        # ------------------------------
+        # Step 1: kv based on stiffeners
+        # ------------------------------
         if stiffeners_at_support_only:
             kv = 5.35
         else:
             if c is None:
-                raise ValueError("c (stiffener spacing) required when intermediate stiffeners exist")
+                raise ValueError("c (stiffener spacing) is required when intermediate stiffeners exist")
 
             ratio = c / d
 
             if ratio < 1.0:
-                kv = 4.0 + 5.35 / (ratio**2)
+                kv = 4.0 + 5.35 / (ratio ** 2)
             else:
-                kv = 5.35 + 4.0 / (ratio**2)
+                kv = 5.35 + 4.0 / (ratio ** 2)
 
-
-        # Step-2: Elastic Critical Shear Stress τcr,e
+        # ------------------------------------------
+        # Step 2: Elastic critical shear stress τcr,e
+        # ------------------------------------------
         tau_cr_e = (
-            (kv * (math.pi**2) * E)
-            / (12 * (1 - mu**2))
+            (kv * (math.pi ** 2) * E) /
+            (12 * (1 - mu ** 2))
         ) * (tw / d) ** 2
 
-
-        # Step-3: λw (Web Slenderness Ratio)
-
+        # ---------------------------------------
+        # Step 3: λw = web slenderness ratio
+        # ---------------------------------------
         lambda_w = math.sqrt(fyw / (math.sqrt(3) * tau_cr_e))
 
-        # Step-4: τb Based on λw Regions
+        # ---------------------------------------
+        # Step 4: τb from λw regions (Eq 3.6-3.8)
+        # ---------------------------------------
         tau_y = fyw / math.sqrt(3)
 
         if lambda_w <= 0.8:
             tau_b = tau_y
-
         elif lambda_w < 1.2:
             tau_b = (1 - 0.8 * (lambda_w - 0.8)) * tau_y
-
         else:
-            tau_b = tau_y / (lambda_w**2)
+            tau_b = tau_y / (lambda_w ** 2)
 
-        # Step-5: Final Nominal Shear Strength
-        Vn = Av * tau_b   # N
+        # ---------------------------------------
+        # Step 5: Nominal shear strength
+        # ---------------------------------------
+        Vn = Av * tau_b  # N (since Av in mm2 and tau in MPa = N/mm2)
 
         return {
             "kv": round(kv, 4),
@@ -690,196 +691,262 @@ class IRC22_2014:
             "lambda_w": round(lambda_w, 4),
             "tau_b_MPa": round(tau_b, 4),
             "Vn_kN": round(Vn / 1000, 3),
-            "clause": "IRC 22:2014 - 603.3.3.2 (2)(a)"
+            "clause": "IRC 22:2014 - 603.3.3.2 (2)(a) + IS800:2007 8.4.2.2(a)"
         }
 
+
     @staticmethod
-    def cl_603_3_3_2_tension_field_method(
-            Av,          # shear area of web (mm2)
-            tw,          # web thickness (mm)
-            d,           # clear web depth between flanges (mm)
-            c,           # spacing of transverse stiffeners (mm)
-            fyw,         # yield stress of web (MPa)
-            fyf,         # yield stress of flange (MPa)
-            bf,          # flange width (mm)
-            tf,          # flange thickness (mm)
-            tau_b,       # buckling shear stress from 603.3.3.2 (2)(a)
-            gamma_m0=1.10
+    def cl_603_3_3_2_shear_buckling_tension_field(
+        c, d, tw, fyw,          # web geometry / material
+        bf, tf, fyf,            # flange geometry / material
+        Nf,                     # axial force in flange (N)  <-- IMPORTANT: ask user
+        Av,                     # shear area (mm2)
+        tau_b,                  # buckling shear stress (MPa) from 603.3.3.2(2)(a)
+        Vp,                     # plastic shear resistance (N or kN depending on base) -> keep consistent
+        gamma_m0=1.10
     ):
         """
-        IRC 22:2014
-        Clause 603.3.3.2 (2)(b)
-        Tension Field Method (IS 800 8.4.2.2(b))
+        IRC:22-2014
+        Clause 603.3.3.2 (2)(b) - Tension Field Method
+        Ref: IS 800:2007 Clause 8.4.2.2(b)
 
-        Conditions:
-            - Transverse stiffeners at supports
-            - Intermediate stiffeners present
-            - Panels adjacent provide anchorage
-            - c/d ≥ 1.0
+        Applies when intermediate stiffeners are present and c/d ≥ 1.0.
+
+        Inputs:
+            c, d, tw : (mm)
+            fyw      : MPa
+            bf, tf   : mm
+            fyf      : MPa
+            Nf       : N (axial force in flange)
+            Av       : mm2 shear area
+            tau_b    : MPa (from post-critical method)
+            Vp       : N (plastic shear resistance)
+        Returns:
+            dict with Vtf (nominal shear capacity) and intermediate parameters
         """
 
-        import math
+        if (c / d) < 1.0:
+            raise ValueError("Tension Field method applicable only when c/d ≥ 1.0")
 
-        # CHECK CONDITION 
-        if c / d < 1.0:
-            raise ValueError("Tension Field Method not permitted because c/d < 1.0")
+        if Nf is None:
+            raise ValueError("Nf (axial force in flange) must be provided (do not assume 0)")
 
-        # STEP 1 : φ (inclination)
-        phi = math.atan(d / c)   # radians
+        # --- call Mfr from IS800 ---
+        Mfr = IS800_2007.cl_8_4_2_2_Mfr_TensionField(
+            bf=bf,
+            tf=tf,
+            fyf=fyf,
+            Nf=Nf,
+            gamma_mo=gamma_m0
+        )
 
-        #  STEP 2 : ψ parameter 
-        psi = 1.5 * tau_b * math.sin(2 * phi)
+        # --- call Tension Field from IS800 ---
+        phi, Mfr2, s, wtf, psi, fv, Vtf = IS800_2007.cl_8_4_2_2_TensionField(
+            c=c,
+            d=d,
+            tw=tw,
+            fyw=fyw,
+            bf=bf,
+            tf=tf,
+            fyf=fyf,
+            Nf=Nf,
+            gamma_mo=gamma_m0,
+            A_v=Av,
+            tau_b=tau_b,
+            V_p=Vp
+        )
 
-        #  STEP 3 : Tension field yield strength fv 
-        fv = math.sqrt(fyw**2 - 3 * (tau_b**2) + psi**2) - psi
-
-        #  STEP 4 : Anchorage length s 
-        # Mfr from Eq 3.12
-        Mfr = 0.25 * bf * (tf**2) * fyf * (1 - (0 / (bf * tf * fyf / gamma_m0))**2)  # assuming no axial force Nf = 0
-
-        s = (2 / math.sin(phi)) * math.sqrt(Mfr / (fyw * tw))
-        s = min(s, c)   # must not exceed c
-
-        #  STEP 5 : Width of tension field 
-        wtf = d * math.cos(phi) + (c - s) * math.sin(phi)
-
-        #  STEP 6 : Nominal shear strength Vtf 
-        Vtf = Av * tau_b + 0.9 * wtf * tw * fv * math.sin(phi)
-
-        #  STEP 7 : Plastic shear cap
-        Vp = Av * fyw / math.sqrt(3)
-
-        # governing
-        Vn = min(Vtf, Vp)
-
-        # DESIGN STRENGTH
-        Vd = Vn / gamma_m0
-
+        # sanity: both Mfr should match
+        # (IS800 returns Mfr again inside the function)
+        # we won't force equality, but we’ll output both.
+        
         return {
-            "phi_rad": round(phi, 6),
-            "psi_MPa": round(psi, 4),
-            "fv_MPa": round(fv, 4),
-            "wtf_mm": round(wtf, 3),
-            "anchorage_s_mm": round(s, 3),
-            "Vtf_kN": round(Vtf / 1000, 3),
-            "Vp_kN": round(Vp / 1000, 3),
-            "Vn_kN": round(Vn / 1000, 3),
-            "Vd_kN": round(Vd / 1000, 3),
+            "phi_deg": round(phi, 4),
+            "Mfr_Nmm": round(Mfr, 3),
+            "Mfr_inside_Nmm": round(Mfr2, 3),
+            "anchorage_length_s_mm": round(s, 3),
+            "tension_field_width_wtf_mm": round(wtf, 3),
+            "psi": round(psi, 4),
+            "fv_MPa": round(fv, 3),
+
+            # Vtf returned by IS800 function is already divided by 10^3 in their code,
+            # but the unit handling is inconsistent there.
+            # We'll return as given + ALSO provide design strength
+            "Vtf_nominal": Vtf,
+
+            # design strength
+            "Vd_tf": round(Vtf / gamma_m0, 3) if isinstance(Vtf, (int, float)) else Vtf,
+
+            "gamma_m0": gamma_m0,
+            "reference": "IS 800:2007 Clause 8.4.2.2(b)",
             "clause": "IRC 22:2014 - 603.3.3.2 (2)(b) Tension Field Method"
         }
     
 
     @staticmethod
-    def cl_603_3_3_3_reduction_bending_high_shear(
-        V,          # applied factored shear force (kN or N consistent)
-        Vd,         # design shear strength (same unit as V)
-        Md,         # plastic design moment of full section (Nmm or consistent)
-        section_type="plastic",   # "plastic" / "compact" / "semi-compact"
-        Mfd=None,   # plastic design moment excluding shear area (needed for plastic/compact)
-        Ze=None,    # elastic section modulus (for semi-compact)
-        fy=None,    # MPa
-        gamma_m0=1.10
+    def cl_603_3_3_3_reduced_bending_under_high_shear(
+        # Shear inputs
+        V_kN,              # factored applied shear force
+        Vd_kN,             # governing design shear strength (minimum from 603.3.3.2)
+
+        # inputs required for 603.3.3.1 (Md)
+        fck,
+        fy,
+        beff,
+        ds,
+        As,
+        Af,
+        bf,
+        tf,
+        tw,
+        dc,
+        combination_type="basic",
+
+        # inputs required for Mfd (mentor equation)
+        Atf_mm2=None,       # top flange area
+        Abf_mm2=None,       # bottom flange area
+        D_mm=None,          # overall depth of girder
+        ttf_mm=None,        # top flange thickness
+        tbf_mm=None,        # bottom flange thickness
+
+        gamma_m0=1.10       # partial safety factor in shear + Mfd
     ):
         """
-        IRC 22:2014
-        Clause 603.3.3.3 - Reduction in Bending Resistance Under High Shear
+        IRC:22-2014 Clause 603.3.3.3
+        Reduction in bending resistance under high shear force
 
-        Handles:
-            - Plastic / Compact Section   → Eq. 3.13
-            - Semi-Compact Section        → Eq. 3.14
+        Updates (as per mentor):
+        - Md MUST come from 603.3.3.1 (call inside function)
+        - Vd must be governing minimum from entire clause 603.3.3.2
+        - Mfd computed using:
+            Mfd = min(Atf, Abf) * (fy/gamma_m0) * (D - ttf/2 - tbf/2)
         """
 
-        section_type = section_type.lower()
+        if Vd_kN <= 0:
+            raise ValueError("Vd_kN must be > 0")
 
-        # -----------------------------
-        # If V <= 0.6 Vd → No reduction
-        # -----------------------------
-        if V <= 0.6 * Vd:
+        # 1: Md from 603.3.3.1 (Annex I.1 + I.2)
+
+        Md_res = IRC22_2014.cl_603_3_1_positive_moment_capacity(
+            fck=fck,
+            fy=fy,
+            beff=beff,
+            ds=ds,
+            As=As,
+            Af=Af,
+            bf=bf,
+            tf=tf,
+            tw=tw,
+            dc=dc,
+            combination_type=combination_type
+        )
+
+        Md_kNm = Md_res["Mp_kNm"]   # Md comes from clause 603.3.3.1
+
+        if Md_kNm <= 0:
+            raise ValueError("Md calculated from 603.3.3.1 is invalid (<=0)")
+
+        # Step 2: If V <= 0.6 Vd -> no reduction
+
+        if V_kN <= 0.6 * Vd_kN:
             return {
-                "reduction_required": False,
-                "Mdv": Md,
-                "Mdv_kNm": round(Md / 1e6, 3),
+                "V_kN": round(V_kN, 3),
+                "Vd_kN": round(Vd_kN, 3),
+                "Md_kNm_from_603_3_3_1": round(Md_kNm, 3),
+                "is_reduction_required": False,
+                "beta": 0.0,
+                "Mfd_kNm": None,
+                "Mdv_kNm": round(Md_kNm, 3),
                 "clause": "IRC 22:2014 - 603.3.3.3 (No reduction, V <= 0.6Vd)"
             }
 
-        # ----------------------------------------
-        # Case 1: Plastic or Compact Sections
-        # ----------------------------------------
-        if section_type in ["plastic", "compact"]:
+        # Step 3: Compute Mfd (mentor equation)
 
-            if Mfd is None:
-                raise ValueError("Mfd must be provided for plastic/compact sections")
+        missing = [x for x in [Atf_mm2, Abf_mm2, D_mm, ttf_mm, tbf_mm] if x is None]
+        if missing:
+            raise ValueError(
+                "For V > 0.6Vd, must provide Atf_mm2, Abf_mm2, D_mm, ttf_mm, tbf_mm for Mfd"
+            )
 
-            beta = (2 * (V / Vd) - 1) ** 2
+        Aflange_mm2 = min(Atf_mm2, Abf_mm2)
+        lever_arm_mm = D_mm - (ttf_mm / 2.0) - (tbf_mm / 2.0)
 
-            Mdv = Md - beta * (Md - Mfd)
+        Mfd_Nmm = Aflange_mm2 * (fy / gamma_m0) * lever_arm_mm
+        Mfd_kNm = Mfd_Nmm / 1e6
 
-            # Upper limit 1.2 Ze fy / γm0
-            if Ze is not None and fy is not None:
-                upper_limit = 1.2 * Ze * fy / gamma_m0
-                Mdv = min(Mdv, upper_limit)
-            else:
-                upper_limit = None
+        # 4: β and reduced bending (Eq 3.13)
 
-            return {
-                "reduction_required": True,
-                "beta": round(beta, 4),
-                "Mdv": Mdv,
-                "Mdv_kNm": round(Mdv / 1e6, 3),
-                "upper_limit_kNm": None if upper_limit is None else round(upper_limit / 1e6, 3),
-                "clause": "IRC 22:2014 - 603.3.3.3 (Eq. 3.13 Plastic/Compact)"
-            }
+        beta = (2 * V_kN / Vd_kN - 1) ** 2
 
-        # ----------------------------------------
-        # Case 2: Semi-Compact Section
-        # ----------------------------------------
-        elif section_type == "semi-compact":
+        Mdv_kNm = Md_kNm - beta * (Md_kNm - Mfd_kNm)
 
-            if Ze is None or fy is None:
-                raise ValueError("Ze and fy must be provided for semi-compact section")
+        return {
+            "V_kN": round(V_kN, 3),
+            "Vd_kN": round(Vd_kN, 3),
 
-            Mdv = Ze * fy / gamma_m0
+            # Md details
+            "Md_kNm_from_603_3_3_1": round(Md_kNm, 3),
+            "Md_details_603_3_3_1": Md_res, 
 
-            return {
-                "reduction_required": True,
-                "Mdv": Mdv,
-                "Mdv_kNm": round(Mdv / 1e6, 3),
-                "clause": "IRC 22:2014 - 603.3.3.3 (Eq. 3.14 Semi-Compact)"
-            }
+            # reduction info
+            "is_reduction_required": True,
+            "beta": round(beta, 4),
+            "Aflange_min_mm2": Aflange_mm2,
+            "lever_arm_mm": round(lever_arm_mm, 3),
+            "Mfd_kNm": round(Mfd_kNm, 3),
+            "Mdv_kNm": round(Mdv_kNm, 3),
 
-        else:
-            raise ValueError("section_type must be 'plastic', 'compact', or 'semi-compact'")
+            "gamma_m0": gamma_m0,
+            "clause": "IRC 22:2014 - 603.3.3.3 (Md from 603.3.3.1)"
+        }
 
-    
+
     # 604.3 Stresses and Deflection — Modular Ratio
-
     @staticmethod
     def cl_604_3_modular_ratio(
-            Es=2.0e5,          # MPa (Steel Modulus)
-            Ecm=None,          # MPa (Concrete modulus at 28 days)
+            fck=None,
+            concrete_grade=None,
+            Ecm=None,          # MPa (Concrete modulus at 28 days) — from Annex III Table III.1
             Eci=None,          # MPa (Concrete modulus before 28 days)
-            Kc=0.5             # creep factor
+            Kc=0.5,            # creep factor (given in clause)
+            aggregate_type="quartzite"
     ):
+        
         """
         IRC:22-2014
         Clause 604.3 - Stresses and Deflection
         Modular Ratio (m)
 
-        Returns modular ratio:
-            - Before 28 days (construction stage)
-            - Short-term after setting
-            - Long-term after setting
+        Clause states:
+            Es = 2.0 x 10^5 N/mm2 
+            Ecm = modulus of cast-in-situ concrete at 28 days (Annex-III Table III.1)
+            m_short = Es/Ecm >= 7.5
+            m_long  = Es/(Kc*Ecm) >= 15.0
+            m_before = Es/Eci (if concrete age i < 28 days)
         """
 
-        if Ecm is None:
-            raise ValueError("Ecm (Concrete modulus at 28 days) must be provided")
+        # As per clause (fixed)
+        Es = 2.0e5  # MPa (N/mm2)
 
-        # ---------- BEFORE 28 DAYS ----------
+        # Ecm from Annex III Table III.1 if not provided
+        if Ecm is None:
+            if concrete_grade is None:
+                raise ValueError("Provide Ecm OR concrete_grade (Ecm can be obtained from Annex III Table III.1).")
+
+            # NOTE: Ecm comes from IRC22 Annex III concrete table (III.2)
+            concrete_table = IRC22_2014.cl_602_annexIII_concrete_properties(aggregate_type=aggregate_type)
+            if concrete_grade not in concrete_table:
+                raise ValueError(f"Unknown concrete grade '{concrete_grade}'. Valid: {list(concrete_table.keys())}")
+
+            Ecm = concrete_table[concrete_grade]["Ec"] * 1000  # Ec stored in GPa → convert to MPa
+
+        # BEFORE 28 DAYS
         m_before = None
-        if Eci:
+        if Eci is not None:
             m_before = Es / Eci
 
-        # ---------- AFTER 28 DAYS ----------
+        # AFTER 28 DAYS
+
         # Short-term
         m_short = Es / Ecm
         m_short = max(m_short, 7.5)
@@ -889,13 +956,13 @@ class IRC22_2014:
         m_long = max(m_long, 15.0)
 
         return {
-            "m_before_28days": m_before,
+            "Es_MPa": Es,
+            "Ecm_MPa": round(Ecm, 2),
+            "Eci_MPa": None if Eci is None else round(Eci, 2),
+            "Kc": Kc,
+            "m_before_28days": None if m_before is None else round(m_before, 3),
             "m_short_term": round(m_short, 3),
             "m_long_term": round(m_long, 3),
-            "Es_MPa": Es,
-            "Ecm_MPa": Ecm,
-            "Eci_MPa": Eci,
-            "Kc": Kc,
             "clause": "IRC 22:2014 - 604.3"
         }
 
@@ -904,85 +971,81 @@ class IRC22_2014:
 
     @staticmethod
     def cl_604_3_1_limiting_stresses(
-        fck_concrete,
-        fy_steel,
-        fbc=None,   # bending compressive stress in steel (MPa)
-        fbt=None,   # bending tensile stress in steel (MPa)
-        fp=0,       # bearing stress in steel (MPa)
-        tau_b=0     # shear stress in steel (MPa)
+        f_ck_cu,        # MPa : concrete cube strength (IRC 22 Annex III Table III.1)
+        f_yk_reinf,     # MPa : reinforcement yield strength (IRC 22 Annex III / IS 1786)
+        f_y_struct,     # MPa : structural steel yield strength (IRC 22 Annex III / steel grade)
+        fbc=None,       # MPa : bending compressive stress in steel section
+        fbt=None,       # MPa : bending tensile stress in steel section
+        fp=0.0,         # MPa : bearing stress in steel section
+        tau_b=0.0       # MPa : shear stress in steel section
     ):
         """
-        IRC:22-2014
-        Clause 604.3.1 - Limiting Stresses for Serviceability
+        IRC:22-2014 Clause 604.3.1 - Limiting Stresses for Serviceability
 
-        Covers:
         1. Concrete compressive stress limit  -> IRC 112-2011 Cl. 12.2.1
         2. Reinforcement tensile stress limit -> IRC 112-2011 Cl. 12.2.2
-        3. Structural steel equivalent stress -> must be <= 0.9 fy
+        3. Structural steel equivalent stress -> must be <= 0.9 f_y (structural steel)
 
-        Parameters:
-            fck_concrete (float): concrete characteristic cube strength (MPa)
-            fy_steel (float): steel yield stress (MPa)
-
-            fbc (float): actual compressive bending stress in steel (MPa)
-            fbt (float): actual tensile bending stress in steel (MPa)
-            fp (float):   bearing stress in steel section (MPa)
-            tau_b (float): shear stress in steel section (MPa)
-
-        Returns:
-            dict containing allowable limits + equivalent stress check
+        Notes on symbols (as per mentor correction):
+        - f_ck_cu (concrete cube strength) comes from IRC22 Annex III Table III.1
+        - f_yk_reinf is characteristic yield strength of reinforcement
+        - f_y_struct is characteristic yield strength of structural steel
         """
 
         import math
 
+        # Concrete allowable stress
 
-        # Concrete Limit (IRC 112-2011 Cl 12.2.1)
+        # IRC 112-2011 Clause 12.2.1: σc,max <= k1 * f_ck
         k1 = 0.48
-        f_conc_allow = k1 * fck_concrete
+        sigma_c_allow = k1 * f_ck_cu
 
+        # Reinforcement allowable tensile stress
 
-        # Reinforcement Steel Limit (IRC 112-2011 Cl 12.2.2)
-
+        # IRC 112-2011 Clause 12.2.2: σs,max <= k3 * f_yk
         k3 = 0.80
-        f_reinf_allow = k3 * fy_steel
+        sigma_s_allow = k3 * f_yk_reinf
 
+        # 3) Structural steel equivalent stress
 
-        #  Structural Steel Equivalent Stress Limit
-        steel_limit = 0.9 * fy_steel
+        # Equivalent stress must be <= 0.9 f_y (structural)
+        steel_limit = 0.9 * f_y_struct
 
         fe_comp = None
         fe_tens = None
 
+        steel_equivalent_stress_checked = False
+        steel_safe = None  # None = not evaluated
+
         if fbc is not None and fbt is not None:
+            steel_equivalent_stress_checked = True
 
             # Equivalent compressive stress (En 4.1)
-            fe_comp = math.sqrt(
-                fbc**2 + fp**2 + fbc*fp + 3*(tau_b**2)
-            )
+            fe_comp = math.sqrt(fbc**2 + fp**2 + fbc * fp + 3 * (tau_b**2))
 
             # Equivalent tensile stress (En 4.2)
-            fe_tens = math.sqrt(
-                fbt**2 + fp**2 + fbt*fp + 3*(tau_b**2)
-            )
+            fe_tens = math.sqrt(fbt**2 + fp**2 + fbt * fp + 3 * (tau_b**2))
 
             steel_safe = (fe_comp <= steel_limit) and (fe_tens <= steel_limit)
 
-        else:
-            steel_safe = "Not evaluated (fbc/fbt not provided)"
-
-
         return {
-            "concrete_allowable_stress_MPa": round(f_conc_allow, 3),
-            "reinforcement_allowable_stress_MPa": round(f_reinf_allow, 3),
-            "steel_equivalent_limit_0.9fy_MPa": round(steel_limit, 3),
+            # Concrete check
+            "k1": k1,
+            "concrete_allowable_stress_MPa": round(sigma_c_allow, 3),
 
+            # Reinforcement check
+            "k3": k3,
+            "reinforcement_allowable_stress_MPa": round(sigma_s_allow, 3),
+
+            # Structural steel check
+            "steel_equivalent_limit_0.9fy_MPa": round(steel_limit, 3),
             "steel_equivalent_compressive_fe_MPa": None if fe_comp is None else round(fe_comp, 3),
             "steel_equivalent_tensile_fe_MPa": None if fe_tens is None else round(fe_tens, 3),
-
+            "steel_equivalent_stress_checked": steel_equivalent_stress_checked,
             "steel_serviceability_safe": steel_safe,
-
             "clause": "IRC 22:2014 - 604.3.1 + IRC 112-2011 12.2.1 / 12.2.2"
         }
+
 
 
     # 604.3.2  Limit of Deflection and Camber
@@ -1081,146 +1144,182 @@ class IRC22_2014:
 
     @staticmethod
     def cl_604_4_crack_control_As_min(
-        fctm,              # MPa (mean tensile strength of concrete)
-        beff,              # mm effective flange width in tension
-        t_slab,            # mm slab thickness in tension zone
-        fy,                # MPa reinforcement yield
-        kc=0.5,            # coefficient ≥ 0.5 (default recommended)
-        k=1.0,             # restraint coefficient (1.0 typical)
-        sigma_s=None,      # MPa steel stress to use, default = fy
-        As_provided=None   # mm2 optional provided reinforcement to check adequacy
+        fctm,                 # MPa (mean tensile strength of concrete) - IRC 22 Table III.1
+        beff,                 # mm effective flange width in tension zone
+        t_slab,               # mm slab thickness in tension zone
+        fy,                   # MPa reinforcement yield strength (f_yk from IRC 22 Annex III)
+        kc=0.5,               # coefficient kc >= 0.5 (IRC:112 Cl 12.3.3)
+        sigma_s=None,         # MPa steel stress; if None -> take fy
+        width_mm=None,        # mm flange width or web width for selecting k (restraint coefficient)
+        element_type="flange",# "flange" or "web"
+        As_provided=None      # mm2 
     ):
         """
         IRC 22:2014
-        Clause 604.4 - Crack Control
-        Ref: IRC:112-2011 Clause 12.3.3
+        Clause 604.4 - Control of cracking in concrete
+        Ref: IRC:112-2011 Clause 12.3.3 (Minimum reinforcement for crack control)
 
-        Computes minimum reinforcement required in tension flange region
-        to control cracking.
+        Formula:
+            As_min = kc * k * fct_eff * Act / sigma_s
 
-        Returns:
-            dict results including As_min and pass/fail (if As_provided given)
+        Assumptions:
+            - Cracking considered after 28 days ⇒ fct_eff = fctm
+            - fctm taken from IRC 22 Table III.1 (Annexure III)
+
+        k (restraint coefficient):
+            k = 1.0  for web h <= 300 mm OR flange width <= 300 mm
+            k = 0.65 for web h > 800 mm OR flange width > 800 mm
+            Intermediate values may be interpolated.
         """
 
-        # Basic validity checks 
+        # validity checks 
         if kc < 0.5:
-            raise ValueError("kc must be ≥ 0.5 as per IRC:112-2011 guidance")
+            raise ValueError("kc must be >= 0.5 as per IRC:112-2011 Clause 12.3.3")
 
         if sigma_s is None:
-            sigma_s = fy    # assume steel stress = fy unless user supplies lower value
+            sigma_s = fy  # assume steel stress = fy unless user gives lower value
 
-        # Tensile Concrete Area 
-        Act = beff * t_slab   # mm2
+        #  define fct_eff 
+        #  cracking after 28 days -> fct_eff = fctm
+        fct_eff = fctm
 
-        # Minimum Reinforcement
-        # As_min = kc * k * fct_eff * Act / sigma_s
-        As_min = kc * k * fctm * Act / sigma_s
+        #  compute k based on width/web-height 
+        # If width_mm not provided, default to k=1.0 
+        if width_mm is None:
+            k = 1.0
+            k_basis = "width_mm not provided → assumed k = 1.0"
+        else:
+            if width_mm <= 300:
+                k = 1.0
+                k_basis = f"{element_type} dimension <= 300 mm → k = 1.0"
+            elif width_mm > 800:
+                k = 0.65
+                k_basis = f"{element_type} dimension > 800 mm → k = 0.65"
+            else:
+                # Linear interpolation between (300,1.0) and (800,0.65)
+                k = 1.0 - (width_mm - 300) * (1.0 - 0.65) / (800 - 300)
+                k_basis = f"{element_type} dimension between 300–800 mm → interpolated k"
+
+        # tensile concrete area 
+        Act = beff * t_slab  # mm2
+
+        #  minimum reinforcement 
+        As_min = kc * k * fct_eff * Act / sigma_s
 
         result = {
             "Act_mm2": round(Act, 2),
             "kc": kc,
-            "k": k,
+            "k": round(k, 4),
+            "k_basis": k_basis,
             "fctm_MPa": fctm,
+            "fct_eff_MPa": fct_eff,  
             "sigma_s_MPa": sigma_s,
             "As_min_mm2": round(As_min, 2),
             "clause": "IRC 22:2014 - 604.4 | IRC 112-2011 Cl.12.3.3"
         }
 
-        # Optional adequacy check
         if As_provided is not None:
             result["As_provided_mm2"] = As_provided
             result["is_ok"] = As_provided >= As_min
 
         return result
 
+
     @staticmethod
     def cl_605_2_fatigue_design(
-            tp,                 # thicker plate thickness (mm)
-            f,                  # actual fatigue stress range (MPa)
-            Nsc=None,           # actual no. of expected stress cycles
-            gamma_mf=1.35,      # partial safety factor for fatigue strength
-            gamma_m=1.0         # partial safety factor for loads
+            tp_mm,                     # thicker plate thickness (mm)
+            f_MPa,                     # actual fatigue stress range (MPa)
+            Nsc=None,                  # no. of stress cycles 
+            section_type="welded",     # "welded" or "rolled"
+            gamma_mft=1.35,            # γ_mft = partial safety factor for fatigue strength (Table 3)
+            gamma_ff=1.0               # γ_ff  = partial safety factor for fatigue actions/effects (usually 1.0)
         ):
         """
         IRC:22-2015
         Clause 605.2 - Fatigue Design
 
-        Handles:
-        1) Capacity Reduction Factor for thickness > 25mm
-        μr = (25/tp)^0.25 <= 1.0
+        Includes:
+        1) Thickness correction factor μr (only for welded sections with tp > 25 mm):
+                μr = (25/tp)^0.25 ≤ 1.0
 
-        2) Low Fatigue Check:
-        Fatigue assessment NOT REQUIRED if:
-            f < 27 / γ_mf
-        OR
-            Nsc < 5e6 * ((27/γ_mf) / (γ_m * f))^3
+        2) Low fatigue exemption:
+                f < 27/γ_mft
+            OR Nsc < 5e6 * ((27/γ_mft)/(γ_ff*f))^3
 
-        Parameters:
-            tp          plate thickness (mm)
-            f           fatigue stress range (MPa)
-            Nsc         expected stress cycles
-            gamma_mf    fatigue strength safety factor (default 1.35 typical worst)
-            gamma_m     load factor (default 1.0)
-
-        Returns dict with:
-            mu_r
-            stress_limit
-            stress_ok
-            cycle_limit
-            cycle_ok
-            fatigue_required (True/False)
+        Notes:
+        - For rolled sections, μr = 1.0 always.
+        - For welded sections, μr reduces fatigue capacity for tp > 25 mm.
         """
 
         import math
 
-        # Capacity Reduction Factor μr
+        if tp_mm <= 0:
+            raise ValueError("tp_mm must be > 0")
+        if f_MPa <= 0:
+            raise ValueError("f_MPa must be > 0")
 
-        if tp <= 25:
+        section_type = section_type.lower()
+        if section_type not in ["welded", "rolled"]:
+            raise ValueError("section_type must be 'welded' or 'rolled'")
+
+        # 1) Capacity reduction factor μr (only if welded & tp>25)
+
+        if section_type == "rolled":
             mu_r = 1.0
+            mu_r_reason = "Rolled section → thickness correction not required"
         else:
-            mu_r = (25.0 / tp) ** 0.25
-            mu_r = min(mu_r, 1.0)
+            if tp_mm <= 25:
+                mu_r = 1.0
+                mu_r_reason = "Welded section but tp ≤ 25 mm → no correction"
+            else:
+                mu_r = min((25.0 / tp_mm) ** 0.25, 1.0)
+                mu_r_reason = "Welded section & tp > 25 mm → correction applied"
 
-        # Low Fatigue - Stress Range Criterion
-        stress_limit = 27.0 / gamma_mf
-        stress_ok = f < stress_limit
-
-        # Low Fatigue - Number of Cycles Criterion
+        # 2) Low fatigue exemption checks
+        
+        stress_limit = 27.0 / gamma_mft
+        stress_ok = f_MPa < stress_limit
 
         cycle_limit = None
         cycle_ok = None
+        if Nsc is not None:
+            if Nsc <= 0:
+                raise ValueError("Nsc must be > 0 when provided")
 
-        if Nsc is not None and f > 0:
-            cycle_limit = 5e6 * ((27.0 / gamma_mf) / (gamma_m * f))**3
+            cycle_limit = 5e6 * ((27.0 / gamma_mft) / (gamma_ff * f_MPa)) ** 3
             cycle_ok = Nsc < cycle_limit
 
-        # Final Decision
-        # Fatigue NOT required if either condition passes
-        if stress_ok or (cycle_ok is True):
-            fatigue_required = False
-        else:
-            fatigue_required = True
+        # Fatigue not required if any exemption satisfied
+        fatigue_required = not (stress_ok or (cycle_ok is True))
 
         return {
+            "section_type": section_type,
+            "tp_mm": tp_mm,
             "mu_r": round(mu_r, 4),
+            "mu_r_reason": mu_r_reason,
 
-        "stress_limit_27_by_gamma_mf": round(stress_limit, 3),
-        "f_stress_range": f,
-        "stress_condition_ok": stress_ok,
+            "gamma_mft": gamma_mft,     # fatigue strength
+            "gamma_ff": gamma_ff,       # fatigue action
 
-        "cycle_limit_Nsc_allowed": None if cycle_limit is None else round(cycle_limit),
-        "Nsc_input": Nsc,
-        "cycle_condition_ok": cycle_ok,
+            "stress_limit_27_by_gamma_mft_MPa": round(stress_limit, 3),
+            "f_MPa": f_MPa,
+            "stress_condition_ok": stress_ok,
 
-        "fatigue_required": fatigue_required,
-        "clause": "IRC 22:2015 - 605.2 Fatigue Design"
-    }
+            "Nsc_input": Nsc,
+            "cycle_limit_Nsc": None if cycle_limit is None else round(cycle_limit),
+            "cycle_condition_ok": cycle_ok,
+
+            "fatigue_required": fatigue_required,
+            "clause": "IRC 22:2015 - 605.2 Fatigue Design"
+        }
+
 
     @staticmethod
     def cl_605_3_fatigue_strength(
-            Nsc,            # number of stress cycles
-            ffn=None,       # normal fatigue strength at 5e6 cycles (MPa)
-            tfn=None        # shear fatigue strength at 5e6 cycles (MPa)
+            Nsc,                    # number of stress cycles
+            section_type="rolled",  # "rolled" / "welded"
+            ffn=None,               # normal fatigue strength at 5e6 cycles (MPa)
+            tfn=None                # shear fatigue strength at 5e6 cycles (MPa)
         ):
         """
         IRC 22:2015
@@ -1230,176 +1329,323 @@ class IRC22_2014:
             - Design normal fatigue stress range f_f
             - Design shear fatigue stress range tau_f
 
-        Equations:
-            For Normal Stress:
-                If Nsc <= 5e6      →  f_f = ffn
-                If 5e6 < Nsc ≤ 1e8 →  f_f = ffn * (5e6/Nsc)^(1/3)
+        Equations (IRC 22:2015 - 605.3):
 
-            For Shear Stress:
-                tau_f = tfn * (5e6/Nsc)^(1/5)
+            For Normal Stress range:
+                When Nsc <= 5 x 10^6:
+                    f_f = f_fn * (5x10^6 / Nsc)^(1/3)
+                When 5 x 10^6 <= Nsc <= 10^8:
+                    f_f = f_fn * (5x10^6 / Nsc)^(1/5)
 
-        Returns dictionary
+            For Shear Stress range:
+                tau_f = tau_fn * (5x10^6 / Nsc)^(1/5)
+
+        Default values (as per correction note):
+            - ffn = 118 MPa for rolled sections if not provided
+            - ffn = 92 MPa for welded sections if not provided
+            - tfn = 59 MPa if not provided
+
+        Returns:
+            dict
         """
 
         import math
 
-        if Nsc <= 0:
-            raise ValueError("Nsc must be positive")
+        if Nsc is None or Nsc <= 0:
+            raise ValueError("Nsc must be a positive number")
 
-        # ---------- Normal Fatigue Strength ----------
-        f_f = None
-        if ffn is not None:
-            if Nsc <= 5e6:
-                f_f = ffn
-            elif Nsc <= 1e8:
-                f_f = ffn * (5e6 / Nsc) ** (1.0 / 3.0)
-            else:
-                # IRC usually implies curve decay beyond 1e8 as continuing trend
-                f_f = ffn * (5e6 / Nsc) ** (1.0 / 3.0)
+        section_type = section_type.lower().strip()
+        if section_type not in ["rolled", "welded"]:
+            raise ValueError("section_type must be 'rolled' or 'welded'")
 
-        # ---------- Shear Fatigue Strength ----------
-        tau_f = None
-        if tfn is not None:
-            tau_f = tfn * (5e6 / Nsc) ** (1.0 / 5.0)
+        # Default fatigue strengths
+        if ffn is None:
+            ffn = 118.0 if section_type == "rolled" else 92.0
+
+        if tfn is None:
+            tfn = 59.0
+
+        # Normal fatigue stress range f_f
+        
+        if Nsc <= 5e6:
+            exponent = 1.0 / 3.0
+        elif Nsc <= 1e8:
+            exponent = 1.0 / 5.0
+        else:
+            # IRC curve normally specified up to 1e8,
+            # conservatively continue using 1/5 beyond 1e8
+            exponent = 1.0 / 5.0
+
+        f_f = ffn * (5e6 / Nsc) ** exponent
+
+        # Shear fatigue stress range tau_f
+
+        tau_f = tfn * (5e6 / Nsc) ** (1.0 / 5.0)
 
         return {
             "Nsc": Nsc,
-            "f_f_normal_MPa": None if f_f is None else round(f_f, 3),
-            "tau_f_shear_MPa": None if tau_f is None else round(tau_f, 3),
+            "section_type": section_type,
+            "ffn_MPa_used": ffn,
+            "tfn_MPa_used": tfn,
+            "normal_exponent_used": round(exponent, 4),
+            "f_f_normal_MPa": round(f_f, 3),
+            "tau_f_shear_MPa": round(tau_f, 3),
             "clause": "IRC 22:2015 - 605.3 Fatigue Strength"
         }
 
 
+
     @staticmethod
     def cl_605_4_fatigue_assessment(
-        ff,          # Normal fatigue strength range for NSC (from 605.3)
-        tf,          # Shear fatigue strength range for NSC (from 605.3)
-        mu_r=1.0,    # Capacity reduction factor (605.2), default 1.0
-        gamma_mft=1.35,  # Partial safety factor for fatigue strength (Table 3)
-        fy=None,     # Yield stress of steel (MPa)
-        f_actual=None,   # Actual normal stress range in service (MPa)
-        tau_actual=None  # Actual shear stress range in service (MPa)
+        ff,                 # Normal fatigue strength range for NSC (from 605.3)
+        tf,                 # Shear fatigue strength range for NSC (from 605.3)
+        mu_r=1.0,           # Capacity reduction factor (605.2), default 1.0
+        gamma_mft=1.35,     # Partial safety factor for fatigue strength (Table 3)
+        fy=None,            # Yield stress of steel (MPa)
+
+        # Stress RANGE values (constant stress range assumption)
+        f_range=None,       # Actual normal stress RANGE in service (MPa)
+        tau_range=None,     # Actual shear stress RANGE in service (MPa)
+
+        # Absolute MAX stress values from software (important correction)
+        sigma_max=None,     # Absolute maximum normal stress (MPa)
+        tau_max=None        # Absolute maximum shear stress (MPa)
     ):
         """
         IRC:22-2015
         Clause 605.4 – Fatigue Assessment
 
-        Returns design fatigue strength ranges and compliance checks.
-        """
+        Design fatigue strength for NSC life cycles:
+            f_fd   = μr * f_f / γ_mft      Eq 5.4
+            τ_fd   = μr * τ_f / γ_mft      Eq 5.5
 
-        if fy is None:
-            raise ValueError("fy (yield stress) must be provided")
+        Constant stress range requirement:
+            f_range   <= f_fd
+            tau_range <= tau_fd
 
-        # Design Fatigue Strengths
-        f_fd = mu_r * ff / gamma_mft    # Eq 5.4
-        tau_fd = mu_r * tf / gamma_mft  # Eq 5.5
+        Absolute max stress limits:
+            sigma_max <= fy
+            tau_max   <= tau_y
 
-        # Elastic Upper Limits
-        f_limit_elastic = 1.5 * fy
-        tau_limit_elastic = 1.5 * fy / (3 ** 0.5)
-
-        results = {
-            "f_fd_MPa": round(f_fd, 3),
-            "tau_fd_MPa": round(tau_fd, 3),
-            "elastic_limit_normal_MPa": round(f_limit_elastic, 3),
-            "elastic_limit_shear_MPa": round(tau_limit_elastic, 3),
-            "clause": "IRC 22:2015 - 605.4 Fatigue Assessment"
-        }
-
-        # If actual stress values are supplied, perform checks
-        if f_actual is not None:
-            results["normal_within_f_fd"] = f_actual <= f_fd
-            results["normal_within_elastic_limit"] = f_actual <= f_limit_elastic
-
-        if tau_actual is not None:
-            results["shear_within_tau_fd"] = tau_actual <= tau_fd
-            results["shear_within_elastic_limit"] = tau_actual <= tau_limit_elastic
-
-        return results
-
-    @staticmethod
-    def cl_606_3_1_stud_connector_strength(
-    d_mm,
-    hs_mm,
-    fu_MPa,
-    fck_MPa,
-    Ecm_MPa,
-    gamma_v=1.25
-    ):
-        """
-        IRC:22-2015
-        Clause 606.3.1  – Ultimate strength of shear connectors (Stud type)
-
-        Returns design resistance Qu (N)
+        Note:
+            τy is not explicitly defined in IRC22 clause text here.
+            As per mentor instruction / assumption:
+                tau_y = 0.43 * fy   (Assumed based on IRC:24 Table G.2)
         """
 
         import math
 
-        # --- basic checks ---
+        if fy is None:
+            raise ValueError("fy (yield stress) must be provided")
+
+        # Design fatigue strengths (Eq 5.4, 5.5)
+
+        f_fd = mu_r * ff / gamma_mft
+        tau_fd = mu_r * tf / gamma_mft
+
+        
+        # Normal elastic limit
+        sigma_limit = fy
+
+        # Shear elastic limit (assumption as per mentor instruction)
+        tau_y = 0.43 * fy  # Assumption: IRC 24 Table G.2
+
+        results = {
+            "f_fd_MPa": round(f_fd, 3),
+            "tau_fd_MPa": round(tau_fd, 3),
+            "sigma_limit_MPa": round(sigma_limit, 3),
+            "tau_y_limit_MPa": round(tau_y, 3),
+            "mu_r": mu_r,
+            "gamma_mft": gamma_mft,
+            "clause": "IRC 22:2015 - 605.4 Fatigue Assessment"
+        }
+
+        # Stress RANGE checks (fatigue range)
+        if f_range is not None:
+            results["f_range_MPa"] = f_range
+            results["range_check_normal_ok"] = (f_range <= f_fd)
+
+        if tau_range is not None:
+            results["tau_range_MPa"] = tau_range
+            results["range_check_shear_ok"] = (tau_range <= tau_fd)
+
+        # Absolute MAX stress checks 
+        if sigma_max is not None:
+            results["sigma_max_MPa"] = sigma_max
+            results["absolute_check_sigma_ok"] = (abs(sigma_max) <= sigma_limit)
+
+        if tau_max is not None:
+            results["tau_max_MPa"] = tau_max
+            results["absolute_check_tau_ok"] = (abs(tau_max) <= tau_y)
+
+        # Overall summary flags (only computed if relevant values provided)
+        range_ok = None
+        abs_ok = None
+
+        if (f_range is not None) or (tau_range is not None):
+            range_ok = True
+            if f_range is not None:
+                range_ok = range_ok and (f_range <= f_fd)
+            if tau_range is not None:
+                range_ok = range_ok and (tau_range <= tau_fd)
+
+        if (sigma_max is not None) or (tau_max is not None):
+            abs_ok = True
+            if sigma_max is not None:
+                abs_ok = abs_ok and (abs(sigma_max) <= sigma_limit)
+            if tau_max is not None:
+                abs_ok = abs_ok and (abs(tau_max) <= tau_y)
+
+        results["range_checks_overall"] = range_ok
+        results["absolute_stress_checks_overall"] = abs_ok
+
+        return results
+
+
+    @staticmethod
+    def cl_606_3_1_stud_connector_strength(
+        d_mm,                     # stud diameter (mm)
+        hs_mm,                    # stud height (mm)
+        fu_MPa=500,               # stud ultimate strength (MPa)
+        grade=None,               # ex: "M25", "M30" (preferred)
+        fck_cu_MPa=None,          # if grade not given
+        Ecm_MPa=None,             # if grade not given
+        gamma_v=1.25,
+        use_table7_reference=True,
+        debug=False
+    ):
+        """
+        IRC:22-2015 Clause 606.3.1 – Stud connector strength (Eq 6.1)
+
+        NOTE:
+        - fck_cu and Ecm should ideally come from IRC22 Table III.1 (Annexure III).
+        - Provide either:
+            (a) grade="M25"/"M30" etc -> will fetch fck_cu & Ecm from Table III.1
+            OR
+            (b) explicitly give fck_cu_MPa and Ecm_MPa
+        """
+
+
+        # Fetch concrete properties from IRC Table III.1 
+        if (fck_cu_MPa is None or Ecm_MPa is None):
+            if grade is None:
+                raise ValueError("Provide either grade='Mxx' OR provide fck_cu_MPa and Ecm_MPa")
+
+            # Example expected function: cl_602_annexIII_concrete_properties()
+
+            table = IRC22_2014.cl_602_annexIII_concrete_properties()
+
+            if grade not in table:
+                raise ValueError(f"{grade} not found in IRC22 Table III.1 concrete properties")
+
+            fck_cu_MPa = table[grade]["fck_cu"]   # cube strength
+            Ecm_MPa = table[grade]["Ec"]         # modulus of elasticity
+
         if d_mm <= 0 or hs_mm <= 0:
             raise ValueError("Stud diameter and height must be positive")
 
         if fu_MPa > 500:
-            # as per clause <= 500 MPa recommended
-            print("Warning: fu exceeds 500 MPa, IRC recommends fu ≤ 500 MPa")
+            print("Warning: fu > 500 MPa. IRC recommends fu ≤ 500 MPa")
 
-        # cylinder strength of concrete 
-        fck_cyl = 0.8 * fck_MPa
+        # fck cylinder
+        fck_cyl_MPa = 0.8 * fck_cu_MPa
 
-        # alpha factor 
+        # alpha
         slenderness = hs_mm / d_mm
-
-        if slenderness >= 4:
+        if slenderness >= 4.0:
             alpha = 1.0
-        elif 3 < slenderness < 4:
-            alpha = 0.2 * (slenderness + 1)
+        elif 3.0 < slenderness < 4.0:
+            alpha = 0.2 * (slenderness + 1.0)
         else:
-            # below code range – normally not allowed
-            print("Warning: hs/d < 3, outside IRC recommended range")
-            alpha = 0.2 * (slenderness + 1)
+            alpha = 0.2 * (slenderness + 1.0)  # outside range, keep as per eqn with warning
+            print("Warning: hs/d < 3, outside recommended range")
 
-        # steel governed capacity 
-        Qu_steel = (0.8 * fu_MPa * math.pi * (d_mm**2) / 4.0) / gamma_v
+        # strengths (Eq 6.1) 
+        Qu_steel_N = (0.8 * fu_MPa * math.pi * d_mm**2 / 4.0) / gamma_v
+        Qu_conc_N  = (0.29 * alpha * d_mm**2 * math.sqrt(fck_cyl_MPa * Ecm_MPa)) / gamma_v
 
-        # concrete governed capacity 
-        Qu_conc = (0.29 * alpha * (d_mm**2) * math.sqrt(fck_cyl * Ecm_MPa)) / gamma_v
+        if Qu_steel_N <= Qu_conc_N:
+            Qu_N = Qu_steel_N
+            governs = "steel"
+        else:
+            Qu_N = Qu_conc_N
+            governs = "concrete"
 
-        # governing value 
-        Qu = min(Qu_steel, Qu_conc)
+        #  Table 7 reference 
+        Qu_table7_kN = None
+        table7_note = None
 
-        return {
+        if use_table7_reference:
+            TABLE7 = {
+                25: {25: 112, 22: 87, 20: 72, 16: 46, 12: 26},
+                30: {25: 125, 22: 97, 20: 80, 16: 51, 12: 29},
+                40: {25: 149, 22: 115, 20: 95, 16: 61, 12: 34},
+                50: {25: 156, 22: 120, 20: 100, 16: 64, 12: 36}
+            }
+
+            std_ds = [12, 16, 20, 22, 25]
+            std_grades = [25, 30, 40, 50]
+
+            d_key = int(round(d_mm))
+            if d_key in std_ds and 25 <= fck_cu_MPa <= 50:
+                if hs_mm > 100:
+                    table7_note = "hs > 100 mm: Table 7 recommends using 100 mm values"
+
+                if fck_cu_MPa in TABLE7:
+                    Qu_table7_kN = TABLE7[int(fck_cu_MPa)][d_key]
+                else:
+                    # interpolate
+                    lower = max(g for g in std_grades if g <= fck_cu_MPa)
+                    upper = min(g for g in std_grades if g >= fck_cu_MPa)
+                    ql = TABLE7[lower][d_key]
+                    qu = TABLE7[upper][d_key]
+                    Qu_table7_kN = ql + (qu - ql) * (fck_cu_MPa - lower) / (upper - lower)
+                    Qu_table7_kN = round(Qu_table7_kN, 3)
+                    table7_note = (table7_note + " | " if table7_note else "") + \
+                                "Interpolated Table 7 value"
+
+        result = {
+            "Qu_kN": round(Qu_N / 1000.0, 3),
+            "governing_mode": governs,
             "alpha": round(alpha, 4),
-            "slenderness_h_by_d": round(slenderness, 3),
-            "Qu_steel_N": round(Qu_steel, 2),
-            "Qu_concrete_N": round(Qu_conc, 2),
-            "Qu_governing_N": round(Qu, 2),
-            "Qu_governing_kN": round(Qu / 1000.0, 3),
-            "limit_state": "min(steel, concrete)",
-            "clause": "IRC 22:2015 - 606.3.1 Stud Connectors"
+            "clause": "IRC 22:2015 - 606.3.1 (Eq 6.1)"
         }
 
+        if use_table7_reference:
+            result["Qu_table7_kN"] = Qu_table7_kN
+            if table7_note:
+                result["table7_note"] = table7_note
+
+        if debug:
+            result.update({
+                "fck_cu_MPa": fck_cu_MPa,
+                "fck_cyl_MPa": round(fck_cyl_MPa, 3),
+                "Ecm_MPa": Ecm_MPa,
+                "slenderness_h_by_d": round(slenderness, 3),
+                "Qu_steel_kN": round(Qu_steel_N / 1000.0, 3),
+                "Qu_concrete_kN": round(Qu_conc_N / 1000.0, 3),
+            })
+
+        return result
+
+
     @staticmethod
-    def cl_606_3_2_shear_connector_fatigue_strength(
-            Nsc,
-            tau_fn=67.0
-        ):
+    def cl_606_3_2_stud_connector_fatigue_strength(
+        Nsc,
+        tau_fn_MPa=67.0,       # MPa (default per IRC Table 5/8 guidance)
+        stud_d_mm=None,        # 16, 20, 22, 25 (optional for Table 8)
+        use_table8=False       # if True, return Qr from Table 8 also
+    ):
         """
         IRC:22-2015
         Clause 606.3.2 - Fatigue strength of shear connectors (Stud)
-        
-        τf = τfn * (5e6 / Nsc) ^ (1/5)
 
-        Parameters
-        ----------
-        Nsc : float
-            Number of stress cycles
-        tau_fn : float
-            Nominal fatigue shear strength at 5×10^6 cycles (MPa / N/mm2)
-            Default = 67 MPa for stud connectors (Table 8)
+        Equation:
+            tau_f = tau_fn * (5e6 / Nsc)^(1/5)
 
-        Returns
-        -------
-        dict with τf MPa
+        Optional:
+            Returns Table 8 nominal fatigue strength Qr (kN) for headed studs (phi 16/20/22/25)
+            using log interpolation for intermediate Nsc.
         """
 
         import math
@@ -1407,14 +1653,58 @@ class IRC22_2014:
         if Nsc <= 0:
             raise ValueError("Nsc must be positive")
 
-        tau_f = tau_fn * ((5e6 / Nsc) ** 0.2)
+        # --- Clause equation ---
+        tau_f_MPa = tau_fn_MPa * ((5e6 / Nsc) ** (1.0 / 5.0))
 
-        return {
-            "tau_fn_MPa": tau_fn,
-            "Nsc": Nsc,
-            "tau_f_MPa": round(tau_f, 3),
-            "clause": "IRC 22:2015 - 606.3.2 Fatigue Strength of Stud Connectors"
+        result = {
+            "tau_f_MPa": round(tau_f_MPa, 3),
+            "clause": "IRC 22:2015 - 606.3.2"
         }
+
+        #  Table 8 values
+        if use_table8:
+            if stud_d_mm is None:
+                raise ValueError("stud_d_mm must be provided when use_table8=True")
+
+            TABLE8_Qr_kN = {
+                25: {1e5: 71, 5e5: 52, 2e6: 39, 1e7: 28, 1e8: 18},
+                22: {1e5: 55, 5e5: 40, 2e6: 30, 1e7: 22, 1e8: 14},
+                20: {1e5: 46, 5e5: 33, 2e6: 25, 1e7: 18, 1e8: 11},
+                16: {1e5: 29, 5e5: 21, 2e6: 16, 1e7: 11, 1e8: 7},
+            }
+
+            d_key = int(round(stud_d_mm))
+            if d_key not in TABLE8_Qr_kN:
+                raise ValueError("stud_d_mm must be one of 16, 20, 22, 25 as per Table 8")
+
+            # log interpolation between nearest points
+            points = sorted(TABLE8_Qr_kN[d_key].items())  # list of (N, Qr)
+            Ns = [p[0] for p in points]
+
+            if Nsc <= Ns[0]:
+                Qr = TABLE8_Qr_kN[d_key][Ns[0]]
+            elif Nsc >= Ns[-1]:
+                Qr = TABLE8_Qr_kN[d_key][Ns[-1]]
+            else:
+                # find bracket
+                for i in range(len(Ns) - 1):
+                    N1, N2 = Ns[i], Ns[i + 1]
+                    if N1 <= Nsc <= N2:
+                        Q1 = TABLE8_Qr_kN[d_key][N1]
+                        Q2 = TABLE8_Qr_kN[d_key][N2]
+
+                        # log interpolation
+                        logN = math.log10(Nsc)
+                        logN1 = math.log10(N1)
+                        logN2 = math.log10(N2)
+
+                        Qr = Q1 + (Q2 - Q1) * ((logN - logN1) / (logN2 - logN1))
+                        break
+
+            result["Qr_table8_kN"] = round(Qr, 3)
+
+        return result
+
 
 
     @staticmethod
