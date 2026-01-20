@@ -2,6 +2,7 @@
 Module for IRC 22:2014 bridge design clauses.
 
 @author: Sweta Pal
+
 """
 
 from is800_2007 import IS800_2007
@@ -447,7 +448,6 @@ class IRC22_2014:
         Uses IS 800:2007 Clause 8.2.1.2 for Mpl
         """
 
-        import math
         from is800_2007 import IS800_2007
 
         if None in [Iy, It, Iw, LLT]:
@@ -557,7 +557,6 @@ class IRC22_2014:
             Av = 2 * bf * tf
         """
 
-        import math
 
         gamma_m0 = 1.10
         section_type = section_type.lower()
@@ -611,177 +610,87 @@ class IRC22_2014:
 
     @staticmethod
     def cl_603_3_3_2_shear_buckling_post_critical(
-        Av,          # shear area (mm2)
-        fyw,         # web yield strength (MPa)
-        d,           # web depth (mm)
-        tw,          # web thickness (mm)
-        c=None,      # spacing of transverse stiffeners (mm) [required if intermediate stiffeners exist]
-        E=2.0e5,     # Modulus of Elasticity (MPa)
-        mu=0.3,      # Poisson ratio
-        stiffeners_at_support_only=True
+        Av_mm2,
+        fyw_MPa,
+        d_mm,
+        tw_mm,
+        c_mm=None,
+        stiffeners_at_support_only=True,
+        E_MPa=2.0e5,
+        mu=0.3
     ):
         """
-        IRC:22-2014
-        Clause 603.3.3.2 (2)(a) – Shear Buckling Resistance
+        IRC:22-2014 Clause 603.3.3.2 (2)(a)
         Simple Post-Critical Method
 
-        Ref:
-            IS 800:2007 Clause 8.4.2.2(a) – Simple Post-Critical Method (web shear buckling)
-
-        Returns:
-            dict with:
-                kv            : shear buckling coefficient
-                tau_cr_e_MPa  : elastic critical shear stress (MPa)
-                lambda_w      : non-dimensional web slenderness
-                tau_b_MPa     : shear buckling stress (MPa)
-                Vn_kN         : nominal shear strength (kN)
+        Note:
+        Uses IS 800:2007 Clause 8.4.2.2(a)
         """
 
-        import math
+        # Call IS800 clause instead of rewriting
+        return IS800_2007.cl_8_4_2_2_SimplePostCritical(
+            A_v=Av_mm2,
+            fyw=fyw_MPa,
+            d=d_mm,
+            tw=tw_mm,
+            c=c_mm,
+            E=E_MPa,
+            mu=mu,
+            stiffeners_at_support_only=stiffeners_at_support_only
+        )
 
-        # ------------------------------
-        # Step 1: kv based on stiffeners
-        # ------------------------------
-        if stiffeners_at_support_only:
-            kv = 5.35
-        else:
-            if c is None:
-                raise ValueError("c (stiffener spacing) is required when intermediate stiffeners exist")
-
-            ratio = c / d
-
-            if ratio < 1.0:
-                kv = 4.0 + 5.35 / (ratio ** 2)
-            else:
-                kv = 5.35 + 4.0 / (ratio ** 2)
-
-        # ------------------------------------------
-        # Step 2: Elastic critical shear stress τcr,e
-        # ------------------------------------------
-        tau_cr_e = (
-            (kv * (math.pi ** 2) * E) /
-            (12 * (1 - mu ** 2))
-        ) * (tw / d) ** 2
-
-        # ---------------------------------------
-        # Step 3: λw = web slenderness ratio
-        # ---------------------------------------
-        lambda_w = math.sqrt(fyw / (math.sqrt(3) * tau_cr_e))
-
-        # ---------------------------------------
-        # Step 4: τb from λw regions (Eq 3.6-3.8)
-        # ---------------------------------------
-        tau_y = fyw / math.sqrt(3)
-
-        if lambda_w <= 0.8:
-            tau_b = tau_y
-        elif lambda_w < 1.2:
-            tau_b = (1 - 0.8 * (lambda_w - 0.8)) * tau_y
-        else:
-            tau_b = tau_y / (lambda_w ** 2)
-
-        # ---------------------------------------
-        # Step 5: Nominal shear strength
-        # ---------------------------------------
-        Vn = Av * tau_b  # N (since Av in mm2 and tau in MPa = N/mm2)
-
-        return {
-            "kv": round(kv, 4),
-            "tau_cr_e_MPa": round(tau_cr_e, 4),
-            "lambda_w": round(lambda_w, 4),
-            "tau_b_MPa": round(tau_b, 4),
-            "Vn_kN": round(Vn / 1000, 3),
-            "clause": "IRC 22:2014 - 603.3.3.2 (2)(a) + IS800:2007 8.4.2.2(a)"
-        }
 
 
     @staticmethod
-    def cl_603_3_3_2_shear_buckling_tension_field(
-        c, d, tw, fyw,          # web geometry / material
-        bf, tf, fyf,            # flange geometry / material
-        Nf,                     # axial force in flange (N)  <-- IMPORTANT: ask user
-        Av,                     # shear area (mm2)
-        tau_b,                  # buckling shear stress (MPa) from 603.3.3.2(2)(a)
-        Vp,                     # plastic shear resistance (N or kN depending on base) -> keep consistent
+    def cl_603_3_3_2_tension_field_method(
+        c_mm,
+        d_mm,
+        tw_mm,
+        fyw_MPa,
+        bf_mm,
+        tf_mm,
+        fyf_MPa,
+        Nf_N,          
+        Av_mm2,
+        tau_b_MPa,
+        Vp_kN,
         gamma_m0=1.10
     ):
         """
-        IRC:22-2014
-        Clause 603.3.3.2 (2)(b) - Tension Field Method
-        Ref: IS 800:2007 Clause 8.4.2.2(b)
+        IRC:22-2014 Clause 603.3.3.2 (2)(b)
+        Tension Field Method
 
-        Applies when intermediate stiffeners are present and c/d ≥ 1.0.
-
-        Inputs:
-            c, d, tw : (mm)
-            fyw      : MPa
-            bf, tf   : mm
-            fyf      : MPa
-            Nf       : N (axial force in flange)
-            Av       : mm2 shear area
-            tau_b    : MPa (from post-critical method)
-            Vp       : N (plastic shear resistance)
-        Returns:
-            dict with Vtf (nominal shear capacity) and intermediate parameters
+        Note:
+        Uses IS 800:2007 Clause 8.4.2.2(b)
         """
 
-        if (c / d) < 1.0:
-            raise ValueError("Tension Field method applicable only when c/d ≥ 1.0")
-
-        if Nf is None:
-            raise ValueError("Nf (axial force in flange) must be provided (do not assume 0)")
-
-        # --- call Mfr from IS800 ---
-        Mfr = IS800_2007.cl_8_4_2_2_Mfr_TensionField(
-            bf=bf,
-            tf=tf,
-            fyf=fyf,
-            Nf=Nf,
-            gamma_mo=gamma_m0
-        )
-
-        # --- call Tension Field from IS800 ---
-        phi, Mfr2, s, wtf, psi, fv, Vtf = IS800_2007.cl_8_4_2_2_TensionField(
-            c=c,
-            d=d,
-            tw=tw,
-            fyw=fyw,
-            bf=bf,
-            tf=tf,
-            fyf=fyf,
-            Nf=Nf,
+        # IS800 function returns V_tf in kN (as per your shared code)
+        phi, Mfr, s, wtf, psi, fv, Vtf = IS800_2007.cl_8_4_2_2_TensionField(
+            c=c_mm,
+            d=d_mm,
+            tw=tw_mm,
+            fyw=fyw_MPa,
+            bf=bf_mm,
+            tf=tf_mm,
+            fyf=fyf_MPa,
+            Nf=Nf_N,
             gamma_mo=gamma_m0,
-            A_v=Av,
-            tau_b=tau_b,
-            V_p=Vp
+            A_v=Av_mm2,
+            tau_b=tau_b_MPa,
+            V_p=Vp_kN
         )
 
-        # sanity: both Mfr should match
-        # (IS800 returns Mfr again inside the function)
-        # we won't force equality, but we’ll output both.
-        
         return {
-            "phi_deg": round(phi, 4),
+            "phi_deg": round(phi, 3),
             "Mfr_Nmm": round(Mfr, 3),
-            "Mfr_inside_Nmm": round(Mfr2, 3),
-            "anchorage_length_s_mm": round(s, 3),
-            "tension_field_width_wtf_mm": round(wtf, 3),
-            "psi": round(psi, 4),
+            "s_mm": round(s, 3),
+            "wtf_mm": round(wtf, 3),
+            "psi_MPa": round(psi, 3),
             "fv_MPa": round(fv, 3),
-
-            # Vtf returned by IS800 function is already divided by 10^3 in their code,
-            # but the unit handling is inconsistent there.
-            # We'll return as given + ALSO provide design strength
-            "Vtf_nominal": Vtf,
-
-            # design strength
-            "Vd_tf": round(Vtf / gamma_m0, 3) if isinstance(Vtf, (int, float)) else Vtf,
-
-            "gamma_m0": gamma_m0,
-            "reference": "IS 800:2007 Clause 8.4.2.2(b)",
-            "clause": "IRC 22:2014 - 603.3.3.2 (2)(b) Tension Field Method"
+            "Vtf_kN": round(Vtf, 3),
+            "clause": "IRC 22:2014 - 603.3.3.2 (2)(b) | Uses IS 800:2007 8.4.2.2(b)"
         }
-    
+
 
     @staticmethod
     def cl_603_3_3_3_reduced_bending_under_high_shear(
@@ -992,7 +901,6 @@ class IRC22_2014:
         - f_y_struct is characteristic yield strength of structural steel
         """
 
-        import math
 
         # Concrete allowable stress
 
@@ -1251,7 +1159,6 @@ class IRC22_2014:
         - For welded sections, μr reduces fatigue capacity for tp > 25 mm.
         """
 
-        import math
 
         if tp_mm <= 0:
             raise ValueError("tp_mm must be > 0")
@@ -1349,7 +1256,6 @@ class IRC22_2014:
             dict
         """
 
-        import math
 
         if Nsc is None or Nsc <= 0:
             raise ValueError("Nsc must be a positive number")
@@ -1433,7 +1339,6 @@ class IRC22_2014:
                 tau_y = 0.43 * fy   (Assumed based on IRC:24 Table G.2)
         """
 
-        import math
 
         if fy is None:
             raise ValueError("fy (yield stress) must be provided")
@@ -1648,7 +1553,6 @@ class IRC22_2014:
             using log interpolation for intermediate Nsc.
         """
 
-        import math
 
         if Nsc <= 0:
             raise ValueError("Nsc must be positive")
@@ -1709,166 +1613,212 @@ class IRC22_2014:
 
     @staticmethod
     def cl_606_4_1_longitudinal_shear_and_spacing(
-        V_kN,          # Vertical shear at section (kN)
-        beff_mm,       # Effective slab width (mm)
-        xu_mm,         # NA depth from top concrete (mm)
-        t_slab_mm,     # slab thickness (mm)
-        Es=2.0e5,      # MPa
-        Ec=30000,      # MPa (secant modulus of concrete)
-        As_mm2=0,      # steel beam area mm2
-        ys_mm=0,       # CG distance steel to NA
-        Ic_mm4=None,   # Composite moment of inertia if already known
-        Qu_per_stud_kN=100,  # Shear capacity of 1 stud (kN)
-        studs_per_section=2  # default assumption
+        V_kN,              # Vertical shear at section (kN)
+        beff_mm,           # Effective slab width (mm)
+        xu_mm,             # NA depth from top concrete (mm) -> from IRC22 603.3.1
+        t_slab_mm,         # slab thickness (mm)
+
+        Qu_kN,             # stud design capacity (kN) -> from IRC22 606.3.1 
+
+        # Material 
+        Es_MPa=2.0e5,      # MPa (as per IRC 22 clause 604.3)
+        Ecm_MPa=None,      # MPa secant modulus of concrete (can be taken from IRC22 Table III.1)
+
+        # Steel section inputs
+        As_mm2=0.0,        # steel area (mm2) (from software/user)
+        Is_mm4=0.0,        # steel second moment of area (mm4) (from software/user)
+        ys_mm=None,        # CG distance from top of section to steel CG (mm)
+        D_mm=None,         # total depth of girder (mm) - needed only if ys_mm not given
+
+        Ic_mm4=None,       # composite inertia if already known (optional)
+        studs_per_section=2
     ):
         """
-        IRC 22 - 606.4.1 Ultimate Limit State Shear Connector Spacing
+        IRC 22:2015 - Clause 606.4.1
+        Longitudinal Shear and Spacing of Shear Connectors (ULS)
 
-        Returns:
-            VL_kN_per_mm
-            spacing_mm
+        Notes / Corrections:
+        - Ecm is used instead of Ec. (Ecm may be taken from IRC 22 Table III.1)
+        - xu is obtained from IRC 22 Clause 603.3.1 (neutral axis depth)
+        - Composite inertia must include steel inertia Is_mm4 (previously missing)
+        - Qu must come from Clause 606.3.1, not assumed 100 kN
+        - ys_mm is CG distance steel to top of section;
+        default assumption: ys = D/2 + t_slab (if ys not given)
         """
 
-        import math
+        if Ecm_MPa is None:
+            raise ValueError("Ecm_MPa must be provided (can be taken from IRC22 Table III.1)")
 
-        # Convert units
-        V = V_kN * 1e3   # kN → N
-        Qu = Qu_per_stud_kN * 1e3
+        if Qu_kN <= 0:
+            raise ValueError("Qu_kN must be positive (obtain from Clause 606.3.1)")
 
-        # Modular ratio
-        n = Es / Ec
+        # Convert kN to N
+        V_N = V_kN * 1e3
+        Qu_N = Qu_kN * 1e3
 
-        # transformed concrete thickness contributing
+        # Default ys if not provided
+        if ys_mm is None:
+            if D_mm is None:
+                raise ValueError("Provide either ys_mm OR D_mm (for default ys = D/2 + t_slab)")
+            ys_mm = (D_mm / 2.0) + t_slab_mm
+
+        # Modular ratio (n)
+        n = Es_MPa / Ecm_MPa
+
+        # Effective thickness of concrete in compression block
         t_eff = min(xu_mm, t_slab_mm)
 
         # Transformed compressive concrete area
         Aec = n * beff_mm * t_eff  # mm2
 
-        # Y = CG of concrete block from NA
-        # xu measured downward.
-        # distance from NA to centroid of concrete compressive block
-        Y = xu_mm - t_eff / 2
+        # Distance from NA to centroid of concrete compression block
+        Y = xu_mm - (t_eff / 2.0)
 
-        # Composite inertia if not supplied
-
+        # Composite inertia calculation (if not supplied)
         if Ic_mm4 is None:
-            Ic_mm4 = (
-                (As_mm2 * (ys_mm - xu_mm) ** 2)
-                + n * beff_mm * (t_eff ** 3) / 12
-                + Aec * (Y ** 2)
-            )
+            # Steel inertia about composite NA
+            I_steel = Is_mm4 + As_mm2 * (ys_mm - xu_mm) ** 2
 
-        # Longitudinal shear per unit length
-        # V_L = V * (Aec * Y) / I
-        VL = V * (Aec * Y) / Ic_mm4   # N/mm
+            # Concrete inertia about composite NA (transformed)
+            I_conc = (n * beff_mm * (t_eff ** 3) / 12.0) + Aec * (Y ** 2)
 
-        # Spacing
-        # Σ Qu / VL
-        total_Qu = studs_per_section * Qu
+            Ic_mm4 = I_steel + I_conc
 
-        spacing_mm = total_Qu / VL
+        # Longitudinal shear per unit length (N/mm)
+        VL_N_per_mm = V_N * (Aec * Y) / Ic_mm4
+
+        # Connector spacing
+        total_Qu_N = studs_per_section * Qu_N
+        spacing_mm = total_Qu_N / VL_N_per_mm
 
         return {
-            "modular_ratio_n": round(n, 3),
-            "Aec_mm2": round(Aec, 2),
-            "Y_mm": round(Y, 2),
-            "Ic_mm4": round(Ic_mm4, 2),
-            "VL_N_per_mm": round(VL, 3),
+            "n_modular_ratio": round(n, 3),
+            "VL_N_per_mm": round(VL_N_per_mm, 3),
             "studs_per_section": studs_per_section,
-            "stud_capacity_per_section_kN": round(total_Qu / 1000, 2),
             "spacing_mm": round(spacing_mm, 2),
-            "clause": "IRC 22:2015 - 606.4.1 ULS Longitudinal Shear"
+            "clause": "IRC 22:2015 - 606.4.1 Longitudinal Shear and Spacing"
         }
+
 
 
     @staticmethod
     def cl_606_4_1_1_full_shear_spacing(
-        As_mm2,           # tensile steel area (mm2)
-        fy_MPa,           # steel yield strength MPa
-        fck_MPa,          # concrete strength MPa
-        beff_mm,          # effective slab width
-        xu_mm,            # NA depth
-        t_slab_mm,        # slab thickness
-        Qu_per_stud_kN,   # shear capacity per stud (kN)
-        shear_span_mm,    # length between max & zero moment section
+        As_mm2,             # Asl in clause: tensile reinforcement area in longitudinal direction (mm2)
+        fyk_MPa,            # reinforcement yield strength f_yk (MPa)
+        fck_cu_MPa,         # concrete cube compressive strength f_ck_cu (MPa) (from IRC22 Table III.1)
+        beff_mm,            # effective slab width (mm)
+        xu_mm,              # NA depth from top concrete (mm) -> from IRC22 603.3.1
+        t_slab_mm,          # slab thickness (mm)
+        Qu_kN,              # stud capacity (kN) -> from IRC22 606.3.1
+        shear_span_mm,      # L = length from zero moment to max moment section (mm)
         studs_per_section=2,
         gamma_m=1.0
     ):
         """
         IRC 22:2015 Clause 606.4.1.1 Full Shear Connection
-        Returns H1, H2, governing H and stud spacing S
+
+        Corrections included:
+        - Asl treated as As (tensile reinforcement steel area)
+        - fy replaced by fyk since steel is reinforcement
+        - fck replaced by fck_cu (cube) from IRC22 Table III.1 (mention in comment)
+        - Qu must be obtained from IRC22 Clause 606.3.1 (not assumed)
+
+        Returns:
+            H1, H2, governing H, spacing S
         """
 
-        # Effective concrete compressive zone
+        if shear_span_mm <= 0:
+            raise ValueError("shear_span_mm must be positive")
+
+        if Qu_kN <= 0:
+            raise ValueError("Qu_kN must be positive (obtain from Clause 606.3.1)")
+
+        # Effective concrete compressive area:
+        # Aec = b_eff * min(xu, t_slab)
         t_eff = min(xu_mm, t_slab_mm)
-        Aec = beff_mm * t_eff   # mm2
+        Aec_mm2 = beff_mm * t_eff
 
-        # Longitudinal forces (kN)
-        H1 = (As_mm2 * fy_MPa / gamma_m) * 1e-3
-        H2 = (0.36 * fck_MPa * Aec) * 1e-3
+        # Longitudinal force due to bending
+        # H1 = As * fyk / gamma_m  (converted to kN)
+        H1_kN = (As_mm2 * fyk_MPa / gamma_m) * 1e-3
 
-        H = min(H1, H2)
+        # H2 = 0.36 * fck_cu * Aec  (converted to kN)
+        H2_kN = (0.36 * fck_cu_MPa * Aec_mm2) * 1e-3
 
-        # Total stud capacity in section
-        total_Qu_kN = studs_per_section * Qu_per_stud_kN
+        H_kN = min(H1_kN, H2_kN)
 
-        # Shear per unit length along span
-        H_per_length = H / (shear_span_mm)   # kN/mm
+        # Total stud capacity per section
+        total_Qu_kN = studs_per_section * Qu_kN
 
-        # Spacing
-        spacing_mm = total_Qu_kN / H_per_length
+        # Longitudinal shear force per unit length (kN/mm)
+        H_per_mm_kN = H_kN / shear_span_mm
+
+        # Stud spacing
+        spacing_mm = total_Qu_kN / H_per_mm_kN
 
         return {
-            "Aec_mm2": round(Aec, 2),
-            "H1_kN": round(H1, 3),
-            "H2_kN": round(H2, 3),
-            "H_governing_kN": round(H, 3),
-            "H_per_mm_kN": round(H_per_length, 6),
-            "studs_per_section": studs_per_section,
-            "total_stud_capacity_kN": total_Qu_kN,
+            "Aec_mm2": round(Aec_mm2, 2),
+            "H1_kN": round(H1_kN, 3),
+            "H2_kN": round(H2_kN, 3),
+            "H_governing_kN": round(H_kN, 3),
             "spacing_mm": round(spacing_mm, 2),
             "clause": "IRC 22:2015 - 606.4.1.1 Full Shear Connection"
         }
 
 
+
     @staticmethod
     def cl_606_4_2_fatigue_shear_spacing(
         Vr_kN,             # shear range due to LL + impact (kN)
-        beff_mm,           
-        xu_mm,
-        t_slab_mm,
-        I_composite_mm4,   # composite moment of inertia
-        Qu_per_stud_kN,
+        beff_mm,           # effective slab width (mm)
+        xu_mm,             # NA depth from top concrete (mm) -> from IRC22 603.3.1
+        t_slab_mm,         # slab thickness (mm)
+        I_composite_mm4,   # composite moment of inertia (mm4) (same as 606.4.1; may move to another file)
+        Qu_kN,             # stud capacity (kN) -> from Clause 606.3.1
         studs_per_section=2
     ):
         """
         IRC 22:2015 Clause 606.4.2
         Serviceability Limit State (Fatigue) Stud Spacing
+
+        Corrections:
+        - Y must use t_eff, not t_slab (same as 606.4.1)
+        - I_composite equation same as 606.4.1 (can be reused; likely moved to another file later)
         """
 
-        # effective concrete depth
+        if Vr_kN <= 0:
+            raise ValueError("Vr_kN must be positive")
+
+        if I_composite_mm4 <= 0:
+            raise ValueError("I_composite_mm4 must be positive")
+
+        if Qu_kN <= 0:
+            raise ValueError("Qu_kN must be positive (obtain from Clause 606.3.1)")
+
+        # effective concrete thickness in compression
         t_eff = min(xu_mm, t_slab_mm)
 
-        # transformed concrete compression area
-        Aec = beff_mm * t_eff  # mm2
+        # transformed compression area of concrete
+        Aec_mm2 = beff_mm * t_eff
 
-        # CG distance of slab compression block from NA
-        Y = xu_mm - t_slab_mm / 2
+        # CG distance of compression block from NA (same as 606.4.1)
+        Y_mm = xu_mm - t_eff / 2
 
-        # Longitudinal shear per unit length
-        Vr_per_mm = (Vr_kN * Aec * Y) / I_composite_mm4   # kN/mm
+        # Longitudinal shear per unit length (kN/mm)
+        # Vr_per_mm = Vr * (Aec * Y) / I
+        Vr_per_mm_kN = (Vr_kN * Aec_mm2 * Y_mm) / I_composite_mm4
 
         # total stud resistance per section
-        total_Qu = studs_per_section * Qu_per_stud_kN
+        total_Qu_kN = studs_per_section * Qu_kN
 
         # spacing
-        spacing_mm = total_Qu / Vr_per_mm
+        spacing_mm = total_Qu_kN / Vr_per_mm_kN
 
         return {
-            "Aec_mm2": round(Aec, 2),
-            "Y_mm": round(Y, 2),
-            "Vr_per_mm_kN": round(Vr_per_mm, 6),
-            "total_stud_capacity_kN": total_Qu,
+            "Aec_mm2": round(Aec_mm2, 2),
+            "t_eff_mm": round(t_eff, 2),
+            "Y_mm": round(Y_mm, 2),
+            "Vr_per_mm_kN": round(Vr_per_mm_kN, 6),
             "spacing_SR_mm": round(spacing_mm, 2),
             "clause": "IRC 22:2015 - 606.4.2 Fatigue Limit State"
         }
@@ -1876,63 +1826,123 @@ class IRC22_2014:
 
     @staticmethod
     def cl_606_6_shear_connector_detailing(
-        d_stud_mm,          # stud diameter
-        h_stud_mm,          # total stud height
-        t_flange_mm,        # thickness of top flange
-        edge_distance_mm,   # clear edge distance estud
-        ccbottom_mm,        # bottom slab cover to reinforcement
-        d_bar_mm,           # bar diameter
-        clear_cover_stud_mm=25  # required clear cover to stud top
+        d_stud_mm,             # stud diameter (ds)
+        h_stud_mm,             # stud height (hs)
+        t_flange_mm,           # top flange thickness (tf)
+
+        d_stud_head_mm=None,   # stud head diameter (needed for check)
+        edge_distance_mm=None, # estud (if not given, calculated)
+        b_tf_mm=None,          # top flange width (needed for edge distance calc)
+        s_ts_mm=None,          # transverse spacing of studs (needed for edge distance calc)
+        n_s=None,              # no. studs per section (needed for edge distance calc)
+
+        t_slab_mm=None,        # slab thickness (needed for clear cover calc)
+        clear_cover_stud_mm=None,  # ccstud (if not given, calculated)
+
+        # reinforcement info for projection check
+        ccbottom_mm=None,      # bottom slab cover to transverse reinforcement
+        d_bar_mm=None,         # bar diameter
+
+        required_clear_cover_mm=25  # required minimum clear cover
     ):
         """
-        IRC 22:2015 Clause 606.6 - Detailing Requirements Check for Shear Studs
+        IRC 22:2015 Clause 606.6 - Detailing of Shear Connectors
+
+        Checks:
+        1) d_stud <= 2 * t_flange
+        2) h_stud >= max(4*d_stud, 100)
+        3) stud head diameter >= 1.5*d_stud
+        4) edge distance >= 25 mm (can be computed)
+        5) stud projection above bottom reinforcement >= ccbottom + dbar + 40
+        6) clear cover of stud >= 25 mm (can be computed)
         """
 
         results = {}
 
-        # 1. Stud diameter limit
+        #  1. Stud diameter limit 
         limit_d = 2 * t_flange_mm
-        results["stud_diameter_check"] = d_stud_mm <= limit_d
-        results["stud_diameter_limit_mm"] = limit_d
+        results["stud_diameter_limit_mm"] = round(limit_d, 2)
+        results["stud_diameter_check"] = (d_stud_mm <= limit_d)
 
-        # 2. Minimum stud height
-        min_h1 = 4 * d_stud_mm
-        min_h2 = 100
-        min_required_height = max(min_h1, min_h2)
+        # 2. Stud height requirement 
+        min_h_required = max(4 * d_stud_mm, 100.0)
+        results["required_min_height_mm"] = round(min_h_required, 2)
+        results["stud_height_check"] = (h_stud_mm >= min_h_required)
 
-        results["stud_height_check"] = h_stud_mm >= min_required_height
-        results["required_min_height_mm"] = min_required_height
-
-        # 3. Stud head diameter requirement
+        # 3. Stud head diameter check 
         min_head_d = 1.5 * d_stud_mm
-        results["required_head_diameter_mm"] = min_head_d
+        results["required_head_diameter_mm"] = round(min_head_d, 2)
 
-        # 4. Edge distance requirement
-        results["edge_distance_check"] = edge_distance_mm >= 25
-        results["required_edge_distance_mm"] = 25
+        if d_stud_head_mm is None:
+            results["stud_head_check"] = None
+            results["stud_head_check_note"] = "Stud head diameter not provided"
+        else:
+            results["provided_head_diameter_mm"] = round(d_stud_head_mm, 2)
+            results["stud_head_check"] = (d_stud_head_mm >= min_head_d)
 
-        # 5. Projection above bottom reinforcement
-        min_projection = ccbottom_mm + d_bar_mm + 40
-        results["projection_check"] = h_stud_mm >= min_projection
-        results["required_min_projection_mm"] = min_projection
+        # 4. Edge distance check
+        # If edge_distance_mm not provided, compute using:
+        # e = (b_tf - s_ts*(n_s-1) - d_s)/2
+        if edge_distance_mm is None:
+            if (b_tf_mm is not None) and (s_ts_mm is not None) and (n_s is not None):
+                edge_distance_mm = (b_tf_mm - s_ts_mm * (n_s - 1) - d_stud_mm) / 2.0
+                results["edge_distance_calculated_mm"] = round(edge_distance_mm, 2)
+                results["edge_distance_formula"] = "(b_tf - s_ts*(n_s-1) - d_s)/2"
+            else:
+                edge_distance_mm = None
 
-        # 6. Overall height with 25 mm cover
-        results["overall_height_check"] = h_stud_mm >= 100
-        results["required_overall_height_mm"] = 100
-        results["required_clear_cover_mm"] = clear_cover_stud_mm
+        results["required_edge_distance_mm"] = 25.0
+        if edge_distance_mm is None:
+            results["edge_distance_check"] = None
+            results["edge_distance_check_note"] = "Edge distance not provided and insufficient data to calculate"
+        else:
+            results["edge_distance_mm"] = round(edge_distance_mm, 2)
+            results["edge_distance_check"] = (edge_distance_mm >= 25.0)
 
-        # Overall status
-        results["all_requirements_satisfied"] = all([
+        # 5. Projection check above bottom reinforcement 
+        # h_stud >= ccbottom + dbar + 40
+        if ccbottom_mm is None or d_bar_mm is None:
+            results["projection_check"] = None
+            results["projection_check_note"] = "ccbottom_mm / d_bar_mm not provided"
+        else:
+            min_projection = ccbottom_mm + d_bar_mm + 40.0
+            results["required_min_projection_mm"] = round(min_projection, 2)
+            results["projection_check"] = (h_stud_mm >= min_projection)
+
+        # 6. Clear cover check 
+        # If clear_cover_stud_mm not provided:
+        # cc_stud = (t_slab - h_stud)
+        if clear_cover_stud_mm is None:
+            if t_slab_mm is not None:
+                clear_cover_stud_mm = t_slab_mm - h_stud_mm
+                results["clear_cover_calculated_mm"] = round(clear_cover_stud_mm, 2)
+                results["clear_cover_formula"] = "(t_slab - h_stud)"
+            else:
+                clear_cover_stud_mm = None
+
+        results["required_clear_cover_mm"] = required_clear_cover_mm
+        if clear_cover_stud_mm is None:
+            results["clear_cover_check"] = None
+            results["clear_cover_check_note"] = "clear cover not provided and t_slab_mm not given"
+        else:
+            results["clear_cover_stud_mm"] = round(clear_cover_stud_mm, 2)
+            results["clear_cover_check"] = (clear_cover_stud_mm >= required_clear_cover_mm)
+
+        checks = [
             results["stud_diameter_check"],
             results["stud_height_check"],
+            results["stud_head_check"],
             results["edge_distance_check"],
             results["projection_check"],
-            results["overall_height_check"]
-        ])
+            results["clear_cover_check"]
+        ]
+
+        # overall = True only if every check is True (ignore None checks)
+        results["all_requirements_satisfied"] = all(x is True for x in checks if x is not None)
 
         results["clause"] = "IRC 22:2015 - Clause 606.6 Detailing of Shear Connectors"
-
         return results
+
 
 
     @staticmethod
@@ -1992,7 +2002,6 @@ class IRC22_2014:
             details
         """
 
-        import math
 
         # Convert units where required
         VL = VL_kN  # already kN/m
