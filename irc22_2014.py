@@ -5,7 +5,7 @@ Module for IRC 22:2014 bridge design clauses.
 
 """
 
-from is800_2007 import IS800_2007
+# from utils.common.is800_2007 import IS800_2007
 import math
 
 class IRC22_2014:
@@ -254,7 +254,7 @@ class IRC22_2014:
                 eq_used = "Eq 3.2 (general)"
 
         # ---------------- OUTER BEAM ----------------
-            """B0 = distance from edge beam to free edge of slab (X in IRC figure)"""
+            """# B0 = distance from edge beam to free edge of slab (X in IRC figure)"""
         else:
             if B1 is None or B0 is None:
                 raise ValueError("For outer beam provide B1 and B0 (where X=B0).")
@@ -272,255 +272,255 @@ class IRC22_2014:
 
 
     #table 2 -> Classification of steel cross-section
-    @staticmethod
-    def cl_603_check_steel_web_classification(
-        depth_web_mm,
-        tw_mm,
-        fy_MPa,
-        axial_force_N,
-        load_type="Compression",
-        section_class="Plastic"
-    ):
-        return IS800_2007.Table2_web_OfI_H_box_section(
-            depth=depth_web_mm,
-            web_thickness=tw_mm,
-            f_y=fy_MPa,
-            axial_load=axial_force_N,
-            load_type=load_type,
-            section_class=section_class
-        )
+    # @staticmethod
+    # def cl_603_check_steel_web_classification(
+    #     depth_web_mm,
+    #     tw_mm,
+    #     fy_MPa,
+    #     axial_force_N,
+    #     load_type="Compression",
+    #     section_class="Plastic"
+    # ):
+    #     return IS800_2007.Table2_web_OfI_H_box_section(
+    #         depth=depth_web_mm,
+    #         web_thickness=tw_mm,
+    #         f_y=fy_MPa,
+    #         axial_load=axial_force_N,
+    #         load_type=load_type,
+    #         section_class=section_class
+    #     )
     
 
-    @staticmethod
-    def cl_602_table2_i_outstanding_compression_flange(
-        width_mm,
-        thickness_mm,
-        fy_MPa,
-        section_type="Rolled"
-    ):
-        """
-        IRC:22-2014 Clause 602 (Ref: IS800:2007 Table 2 (i))
-        Outstanding element of compression flange.
+    # @staticmethod
+    # def cl_602_table2_i_outstanding_compression_flange(
+    #     width_mm,
+    #     thickness_mm,
+    #     fy_MPa,
+    #     section_type="Rolled"
+    # ):
+    #     """
+    #     IRC:22-2014 Clause 602 (Ref: IS800:2007 Table 2 (i))
+    #     Outstanding element of compression flange.
 
-        Returns:
-            list: [section_class, ratio]
-        """
-        return IS800_2007.Table2_i(
-            width=width_mm,
-            thickness=thickness_mm,
-            f_y=fy_MPa,
-            section_type=section_type
-        )
-
-
-    @staticmethod
-    def cl_602_table2_iii_web_classification(
-        depth_mm,
-        thickness_mm,
-        fy_MPa,
-        classification_type="Neutral axis at mid-depth"
-    ):
-        """
-        IRC:22-2014 Clause 602 (Ref: IS800:2007 Table 2 (iii))
-        Web of an I/H/Box section classification.
-
-        Returns:
-            str: section_class
-        """
-        return IS800_2007.Table2_iii(
-            depth=depth_mm,
-            thickness=thickness_mm,
-            f_y=fy_MPa,
-            classification_type=classification_type
-        )
+    #     Returns:
+    #         list: [section_class, ratio]
+    #     """
+    #     return IS800_2007.Table2_i(
+    #         width=width_mm,
+    #         thickness=thickness_mm,
+    #         f_y=fy_MPa,
+    #         section_type=section_type
+    #     )
 
 
+    # @staticmethod
+    # def cl_602_table2_iii_web_classification(
+    #     depth_mm,
+    #     thickness_mm,
+    #     fy_MPa,
+    #     classification_type="Neutral axis at mid-depth"
+    # ):
+    #     """
+    #     IRC:22-2014 Clause 602 (Ref: IS800:2007 Table 2 (iii))
+    #     Web of an I/H/Box section classification.
 
-    @staticmethod
-    def cl_603_3_1_positive_moment_capacity(
-            fck,
-            fy,
-            beff,
-            ds,
-            As,
-            Af,
-            bf,
-            tf,
-            tw,
-            dc,
-            combination_type="basic",
-            is_compact=True,
-            beff_compact_limit=None,
-            fabrication="rolled"
-        ):
+    #     Returns:
+    #         str: section_class
+    #     """
+    #     return IS800_2007.Table2_iii(
+    #         depth=depth_mm,
+    #         thickness=thickness_mm,
+    #         f_y=fy_MPa,
+    #         classification_type=classification_type
+    #     )
+
+
+
+    # @staticmethod
+    # def cl_603_3_1_positive_moment_capacity(
+    #         fck,
+    #         fy,
+    #         beff,
+    #         ds,
+    #         As,
+    #         Af,
+    #         bf,
+    #         tf,
+    #         tw,
+    #         dc,
+    #         combination_type="basic",
+    #         is_compact=True,
+    #         beff_compact_limit=None,
+    #         fabrication="rolled"
+    #     ):
             
-            """
-            IRC:22-2014
-            Clause 603.3.1 + Annexure I (I.1)
-            Positive Moment Resistance of Composite Beam
-            Plastic / Compact Section with FULL Shear Interaction
-            """
+    #         """
+    #         IRC:22-2014
+    #         Clause 603.3.1 + Annexure I (I.1)
+    #         Positive Moment Resistance of Composite Beam
+    #         Plastic / Compact Section with FULL Shear Interaction
+    #         """
 
-            # Annex I.2  —  Non-Compact Section Restriction
+    #         # Annex I.2  —  Non-Compact Section Restriction
             
-            # For non-compact sections, beff must be restricted
-            # to compact section limiting value from IS 800 Table 2.
+    #         # For non-compact sections, beff must be restricted
+    #         # to compact section limiting value from IS 800 Table 2.
 
-            beff_used = beff  # default: use full effective width
-            beff_compact_limit = None
-            beff_flange_limit = None
-            beff_web_limit = None
+    #         beff_used = beff  # default: use full effective width
+    #         beff_compact_limit = None
+    #         beff_flange_limit = None
+    #         beff_web_limit = None
 
-            if not is_compact:
+    #         if not is_compact:
 
-                # 1) Flange compact limit (IS800 Table 2(i))
+    #             # 1) Flange compact limit (IS800 Table 2(i))
 
-                # We compute Compact limiting ratio and multiply by tf
-                eps = math.sqrt(250.0 / fy)
+    #             # We compute Compact limiting ratio and multiply by tf
+    #             eps = math.sqrt(250.0 / fy)
 
-                if fabrication.lower() == "rolled":
-                    flange_compact_ratio = 10.5 * eps   # Table 2(i) compact limit for rolled
-                    section_type = "Rolled"
-                else:
-                    flange_compact_ratio = 9.4 * eps    # Table 2(i) compact limit for welded
-                    section_type = "Welded"
+    #             if fabrication.lower() == "rolled":
+    #                 flange_compact_ratio = 10.5 * eps   # Table 2(i) compact limit for rolled
+    #                 section_type = "Rolled"
+    #             else:
+    #                 flange_compact_ratio = 9.4 * eps    # Table 2(i) compact limit for welded
+    #                 section_type = "Welded"
 
-                flange_check = IS800_2007.Table2_i(
-                    width=bf,
-                    thickness=tf,
-                    f_y=fy,
-                    section_type=section_type
-                )
+    #             flange_check = IS800_2007.Table2_i(
+    #                 width=bf,
+    #                 thickness=tf,
+    #                 f_y=fy,
+    #                 section_type=section_type
+    #             )
 
-                beff_flange_limit = flange_compact_ratio * tf
+    #             beff_flange_limit = flange_compact_ratio * tf
 
-                # 2) Web compact limit (IS800 Table 2(iii))
+    #             # 2) Web compact limit (IS800 Table 2(iii))
 
-                web_check = IS800_2007.Table2_iii(
-                    depth=ds,
-                    thickness=tw,
-                    f_y=fy,
-                    classification_type="Neutral axis at mid-depth"
-                )
+    #             web_check = IS800_2007.Table2_iii(
+    #                 depth=ds,
+    #                 thickness=tw,
+    #                 f_y=fy,
+    #                 classification_type="Neutral axis at mid-depth"
+    #             )
 
-                # Compact limiting ratio for Table 2(iii) = 105*eps
-                web_compact_ratio = 105.0 * eps
-                beff_web_limit = web_compact_ratio * tw
-
-
-                # Final compact beff limit & restriction
-
-                beff_compact_limit = min(beff_flange_limit, beff_web_limit)
-                beff_used = min(beff, beff_compact_limit)
-
-                return{
-                    "beff_input": beff,
-                    "beff_used": round(beff_used, 3),
-                    "beff_compact_limit": None if beff_compact_limit is None else round(beff_compact_limit, 3),
-                    "beff_flange_limit": None if beff_flange_limit is None else round(beff_flange_limit, 3),
-                    "beff_web_limit": None if beff_web_limit is None else round(beff_web_limit, 3),
-                }
+    #             # Compact limiting ratio for Table 2(iii) = 105*eps
+    #             web_compact_ratio = 105.0 * eps
+    #             beff_web_limit = web_compact_ratio * tw
 
 
-    @staticmethod
-    def cl_603_3_3_1_buckling_resistance_moment(
-        section_class,       # "Plastic" / "Compact" / "Semi-Compact"
-        Zp,                  # mm3
-        Ze,                  # mm3
-        fy,                  # MPa
-        gamma_m0=1.10,
-        support="KEY_DISP_SUPPORT1",
+    #             # Final compact beff limit & restriction
 
-        Iy=None,             # mm4
-        It=None,             # mm4
-        Iw=None,             # mm6
-        LLT=None,            # mm
+    #             beff_compact_limit = min(beff_flange_limit, beff_web_limit)
+    #             beff_used = min(beff, beff_compact_limit)
 
-        section_type="rolled",  # "rolled" / "welded"
-
-        E=2.0e5,             # MPa
-        G=0.77e5             # MPa
-    ):
-        """
-        IRC:22-2014 Clause 603.3.3.1
-        Annexure I: I.5 Buckling Resistance Moment (Construction Stage)
-
-        Uses IS 800:2007 Clause 8.2.1.2 for Mpl
-        """
-
-        from is800_2007 import IS800_2007
-
-        if None in [Iy, It, Iw, LLT]:
-            raise ValueError("Iy, It, Iw and LLT must be provided")
-
-        # 1: Mpl from IS800 Clause 8.2.1.2
-        Mpl = IS800_2007.cl_8_2_1_2_design_bending_strength(
-            section_class=section_class,
-            Zp=Zp,
-            Ze=Ze,
-            fy=fy,
-            gamma_m0=gamma_m0,
-            support=support
-        )  # expected Nmm
-
-        # 2: βb (clause variable)
-
-        if section_class.lower() in ["plastic", "compact"]:
-            beta_b = 1.0
-        elif section_class.lower() in ["semi-compact", "semicompact", "semi_compact"]:
-            beta_b = Ze / Zp
-        else:
-            raise ValueError("section_class must be 'Plastic', 'Compact', or 'Semi-Compact'")
-
-        # 3: alpha_LT depends on rolled/welded
-
-        if section_type.lower() == "rolled":
-            alpha_LT = 0.21
-        elif section_type.lower() == "welded":
-            alpha_LT = 0.49
-        else:
-            raise ValueError("section_type must be 'rolled' or 'welded'")
+    #             return{
+    #                 "beff_input": beff,
+    #                 "beff_used": round(beff_used, 3),
+    #                 "beff_compact_limit": None if beff_compact_limit is None else round(beff_compact_limit, 3),
+    #                 "beff_flange_limit": None if beff_flange_limit is None else round(beff_flange_limit, 3),
+    #                 "beff_web_limit": None if beff_web_limit is None else round(beff_web_limit, 3),
+    #             }
 
 
-        # 4: Critical buckling moment Mcr
+    # @staticmethod
+    # def cl_603_3_3_1_buckling_resistance_moment(
+    #     section_class,       # "Plastic" / "Compact" / "Semi-Compact"
+    #     Zp,                  # mm3
+    #     Ze,                  # mm3
+    #     fy,                  # MPa
+    #     gamma_m0=1.10,
+    #     support="KEY_DISP_SUPPORT1",
 
-        term1 = (math.pi**2 * E * Iy) / (LLT**2)
-        term2 = (G * It) + ((math.pi**2 * E * Iw) / (LLT**2))
-        Mcr = math.sqrt(term1 * term2)  # Nmm
+    #     Iy=None,             # mm4
+    #     It=None,             # mm4
+    #     Iw=None,             # mm6
+    #     LLT=None,            # mm
 
-        # 5: Slenderness ratio λLT
+    #     section_type="rolled",  # "rolled" / "welded"
 
-        lambda_LT = math.sqrt(beta_b * (Zp * fy) / Mcr)
+    #     E=2.0e5,             # MPa
+    #     G=0.77e5             # MPa
+    # ):
+    #     """
+    #     IRC:22-2014 Clause 603.3.3.1
+    #     Annexure I: I.5 Buckling Resistance Moment (Construction Stage)
 
-        # 6: χLT
+    #     Uses IS 800:2007 Clause 8.2.1.2 for Mpl
+    #     """
 
-        if lambda_LT <= 0.4:
-            chi_LT = 1.0
-        else:
-            phi_LT = 0.5 * (1 + alpha_LT * (lambda_LT - 0.2) + lambda_LT**2)
-            chi_LT = 1 / (phi_LT + math.sqrt(phi_LT**2 - lambda_LT**2))
-            chi_LT = min(chi_LT, 1.0)
+    #     from is800_2007 import IS800_2007
 
-        # STEP 7: Buckling reduced moment capacity
+    #     if None in [Iy, It, Iw, LLT]:
+    #         raise ValueError("Iy, It, Iw and LLT must be provided")
 
-        Mpl_buck = chi_LT * Mpl
+    #     # 1: Mpl from IS800 Clause 8.2.1.2
+    #     Mpl = IS800_2007.cl_8_2_1_2_design_bending_strength(
+    #         section_class=section_class,
+    #         Zp=Zp,
+    #         Ze=Ze,
+    #         fy=fy,
+    #         gamma_m0=gamma_m0,
+    #         support=support
+    #     )  # expected Nmm
 
-        return {
-            "section_class": section_class,
-            "section_type": section_type,
+    #     # 2: βb (clause variable)
 
-            "beta_b": round(beta_b, 4),
-            "alpha_LT": round(alpha_LT, 4),
+    #     if section_class.lower() in ["plastic", "compact"]:
+    #         beta_b = 1.0
+    #     elif section_class.lower() in ["semi-compact", "semicompact", "semi_compact"]:
+    #         beta_b = Ze / Zp
+    #     else:
+    #         raise ValueError("section_class must be 'Plastic', 'Compact', or 'Semi-Compact'")
 
-            "lambda_LT": round(lambda_LT, 4),
-            "chi_LT": round(chi_LT, 4),
+    #     # 3: alpha_LT depends on rolled/welded
 
-            "Mcr_kNm": round(Mcr / 1e6, 3),
-            "Mpl_kNm": round(Mpl / 1e6, 3),
-            "Mpl_buckling_kNm": round(Mpl_buck / 1e6, 3),
+    #     if section_type.lower() == "rolled":
+    #         alpha_LT = 0.21
+    #     elif section_type.lower() == "welded":
+    #         alpha_LT = 0.49
+    #     else:
+    #         raise ValueError("section_type must be 'rolled' or 'welded'")
 
-            "clause": "IRC 22:2014 - 603.3.3.1 Annex I (I.5) + IS 800:2007 8.2.1.2"
-        }
+
+    #     # 4: Critical buckling moment Mcr
+
+    #     term1 = (math.pi**2 * E * Iy) / (LLT**2)
+    #     term2 = (G * It) + ((math.pi**2 * E * Iw) / (LLT**2))
+    #     Mcr = math.sqrt(term1 * term2)  # Nmm
+
+    #     # 5: Slenderness ratio λLT
+
+    #     lambda_LT = math.sqrt(beta_b * (Zp * fy) / Mcr)
+
+    #     # 6: χLT
+
+    #     if lambda_LT <= 0.4:
+    #         chi_LT = 1.0
+    #     else:
+    #         phi_LT = 0.5 * (1 + alpha_LT * (lambda_LT - 0.2) + lambda_LT**2)
+    #         chi_LT = 1 / (phi_LT + math.sqrt(phi_LT**2 - lambda_LT**2))
+    #         chi_LT = min(chi_LT, 1.0)
+
+    #     # STEP 7: Buckling reduced moment capacity
+
+    #     Mpl_buck = chi_LT * Mpl
+
+    #     return {
+    #         "section_class": section_class,
+    #         "section_type": section_type,
+
+    #         "beta_b": round(beta_b, 4),
+    #         "alpha_LT": round(alpha_LT, 4),
+
+    #         "lambda_LT": round(lambda_LT, 4),
+    #         "chi_LT": round(chi_LT, 4),
+
+    #         "Mcr_kNm": round(Mcr / 1e6, 3),
+    #         "Mpl_kNm": round(Mpl / 1e6, 3),
+    #         "Mpl_buckling_kNm": round(Mpl_buck / 1e6, 3),
+
+    #         "clause": "IRC 22:2014 - 603.3.3.1 Annex I (I.5) + IS 800:2007 8.2.1.2"
+    #     }
 
 
     # 603.3.3.2  VERTICAL SHEAR :  (1) PLASTIC SHEAR RESISTANCE
@@ -608,88 +608,88 @@ class IRC22_2014:
     # 603.3.3.2 (2)(a)
     # Shear Buckling Resistance – Simple Post-Critical Method
 
-    @staticmethod
-    def cl_603_3_3_2_shear_buckling_post_critical(
-        Av_mm2,
-        fyw_MPa,
-        d_mm,
-        tw_mm,
-        c_mm=None,
-        stiffeners_at_support_only=True,
-        E_MPa=2.0e5,
-        mu=0.3
-    ):
-        """
-        IRC:22-2014 Clause 603.3.3.2 (2)(a)
-        Simple Post-Critical Method
+    # @staticmethod
+    # def cl_603_3_3_2_shear_buckling_post_critical(
+    #     Av_mm2,
+    #     fyw_MPa,
+    #     d_mm,
+    #     tw_mm,
+    #     c_mm=None,
+    #     stiffeners_at_support_only=True,
+    #     E_MPa=2.0e5,
+    #     mu=0.3
+    # ):
+    #     """
+    #     IRC:22-2014 Clause 603.3.3.2 (2)(a)
+    #     Simple Post-Critical Method
 
-        Note:
-        Uses IS 800:2007 Clause 8.4.2.2(a)
-        """
+    #     Note:
+    #     Uses IS 800:2007 Clause 8.4.2.2(a)
+    #     """
 
-        # Call IS800 clause instead of rewriting
-        return IS800_2007.cl_8_4_2_2_SimplePostCritical(
-            A_v=Av_mm2,
-            fyw=fyw_MPa,
-            d=d_mm,
-            tw=tw_mm,
-            c=c_mm,
-            E=E_MPa,
-            mu=mu,
-            stiffeners_at_support_only=stiffeners_at_support_only
-        )
+    #     # Call IS800 clause instead of rewriting
+    #     return IS800_2007.cl_8_4_2_2_SimplePostCritical(
+    #         A_v=Av_mm2,
+    #         fyw=fyw_MPa,
+    #         d=d_mm,
+    #         tw=tw_mm,
+    #         c=c_mm,
+    #         E=E_MPa,
+    #         mu=mu,
+    #         stiffeners_at_support_only=stiffeners_at_support_only
+    #     )
 
 
 
-    @staticmethod
-    def cl_603_3_3_2_tension_field_method(
-        c_mm,
-        d_mm,
-        tw_mm,
-        fyw_MPa,
-        bf_mm,
-        tf_mm,
-        fyf_MPa,
-        Nf_N,          
-        Av_mm2,
-        tau_b_MPa,
-        Vp_kN,
-        gamma_m0=1.10
-    ):
-        """
-        IRC:22-2014 Clause 603.3.3.2 (2)(b)
-        Tension Field Method
+    # @staticmethod
+    # def cl_603_3_3_2_tension_field_method(
+    #     c_mm,
+    #     d_mm,
+    #     tw_mm,
+    #     fyw_MPa,
+    #     bf_mm,
+    #     tf_mm,
+    #     fyf_MPa,
+    #     Nf_N,          
+    #     Av_mm2,
+    #     tau_b_MPa,
+    #     Vp_kN,
+    #     gamma_m0=1.10
+    # ):
+    #     """
+    #     IRC:22-2014 Clause 603.3.3.2 (2)(b)
+    #     Tension Field Method
 
-        Note:
-        Uses IS 800:2007 Clause 8.4.2.2(b)
-        """
+    #     Note:
+    #     Uses IS 800:2007 Clause 8.4.2.2(b)
+    #     """
 
-        # IS800 function returns V_tf in kN (as per your shared code)
-        phi, Mfr, s, wtf, psi, fv, Vtf = IS800_2007.cl_8_4_2_2_TensionField(
-            c=c_mm,
-            d=d_mm,
-            tw=tw_mm,
-            fyw=fyw_MPa,
-            bf=bf_mm,
-            tf=tf_mm,
-            fyf=fyf_MPa,
-            Nf=Nf_N,
-            gamma_mo=gamma_m0,
-            A_v=Av_mm2,
-            tau_b=tau_b_MPa,
-            V_p=Vp_kN
-        )
+    #     # IS800 function returns V_tf in kN (as per your shared code)
+    #     phi, Mfr, s, wtf, psi, fv, Vtf = IS800_2007.cl_8_4_2_2_TensionField(
+    #         c=c_mm,
+    #         d=d_mm,
+    #         tw=tw_mm,
+    #         fyw=fyw_MPa,
+    #         bf=bf_mm,
+    #         tf=tf_mm,
+    #         fyf=fyf_MPa,
+    #         Nf=Nf_N,
+    #         gamma_mo=gamma_m0,
+    #         A_v=Av_mm2,
+    #         tau_b=tau_b_MPa,
+    #         V_p=Vp_kN
+    #     )
 
-        return {
-            "phi_deg": round(phi, 3),
-            "Mfr_Nmm": round(Mfr, 3),
-            "s_mm": round(s, 3),
-            "wtf_mm": round(wtf, 3),
-            "psi_MPa": round(psi, 3),
-            "fv_MPa": round(fv, 3),
-            "Vtf_kN": round(Vtf, 3),
-            "clause": "IRC 22:2014 - 603.3.3.2 (2)(b) | Uses IS 800:2007 8.4.2.2(b)"
-        }
+    #     return {
+    #         "phi_deg": round(phi, 3),
+    #         "Mfr_Nmm": round(Mfr, 3),
+    #         "s_mm": round(s, 3),
+    #         "wtf_mm": round(wtf, 3),
+    #         "psi_MPa": round(psi, 3),
+    #         "fv_MPa": round(fv, 3),
+    #         "Vtf_kN": round(Vtf, 3),
+    #         "clause": "IRC 22:2014 - 603.3.3.2 (2)(b) | Uses IS 800:2007 8.4.2.2(b)"
+    #     }
 
 
     @staticmethod
@@ -711,7 +711,7 @@ class IRC22_2014:
         dc,
         combination_type="basic",
 
-        # inputs required for Mfd (mentor equation)
+        # inputs required for Mfd
         Atf_mm2=None,       # top flange area
         Abf_mm2=None,       # bottom flange area
         D_mm=None,          # overall depth of girder
@@ -724,8 +724,8 @@ class IRC22_2014:
         IRC:22-2014 Clause 603.3.3.3
         Reduction in bending resistance under high shear force
 
-        Updates (as per mentor):
-        - Md MUST come from 603.3.3.1 (call inside function)
+        Updates :
+        - Md comes from 603.3.3.1 
         - Vd must be governing minimum from entire clause 603.3.3.2
         - Mfd computed using:
             Mfd = min(Atf, Abf) * (fy/gamma_m0) * (D - ttf/2 - tbf/2)
@@ -2004,7 +2004,7 @@ class IRC22_2014:
 
 
         # Convert units where required
-        VL = VL_kN  # already kN/m
+        VL = VL_kN  #  kN/m
         L = L_mm / 1000.0  # convert mm to metres
         Ast = Ast_cm2_per_m  # cm2/m as required by clause
 
